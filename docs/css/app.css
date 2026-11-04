@@ -90,6 +90,8 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .seg button.on { background: var(--bg); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
 #kind-filter button.on[data-v="gov"], #st-kind button.on[data-v="gov"] { background: #2b8a3e; color: #fff; }
 .st-kind { margin: 12px 0 4px; }
+.set-row { margin: 12px 0; }
+.set-row .seg { margin: 6px 0 0; }
 .sheet.tall { max-height: 66vh; }
 #view-station { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 #view-station > * { flex: none; }

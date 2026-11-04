@@ -5,6 +5,7 @@ const $ = (id) => document.getElementById(id);
 const HOME = { center: [43.14, 36.46], zoom: 10.4 };
 const LS_USER = "mfuel.userStations.v1";
 const LS_VOICE = "mfuel.voice";
+const LS_LANG = "mfuel.lang";
 
 const S = {
   map: null, graph: null, swOk: false,
@@ -12,7 +13,7 @@ const S = {
   me: null, gps: null, costs: null, rankedAt: null,
   selected: null, preview: null, previewAt: null, routes: [], routeIdx: 0,
   nav: null, navRoute: null, follow: true, sim: null, lastReroute: 0, lastFix: null,
-  wakeLock: null, marker: null, menuAt: null, editing: null,
+  wakeLock: null, marker: null, menuAt: null, editing: null, lang: "en",
 };
 window.S = S; // handy for debugging from the console
 
@@ -122,15 +123,81 @@ function fuelIcon(color) {
   return g.getImageData(0, 0, s, s);
 }
 
+// Landmarks you can steer by: small round badges drawn on the phone (no extra download).
+function landmarkIcon(color, draw) {
+  const s = 40, c = document.createElement("canvas");
+  c.width = c.height = s;
+  const g = c.getContext("2d");
+  g.beginPath(); g.arc(20, 20, 17, 0, Math.PI * 2);
+  g.fillStyle = color; g.fill();
+  g.lineWidth = 3; g.strokeStyle = "#fff"; g.stroke();
+  g.fillStyle = "#fff"; g.strokeStyle = "#fff";
+  draw(g);
+  return g.getImageData(0, 0, s, s);
+}
+const LANDMARK_ICONS = {
+  "lm-mosque": ["#0c8599", (g) => { // crescent: white disc with a badge-coloured disc over it
+    g.beginPath(); g.arc(18, 20, 10, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#0c8599"; g.beginPath(); g.arc(22.5, 17.5, 8.5, 0, Math.PI * 2); g.fill();
+  }],
+  "lm-church": ["#5f3dc4", (g) => { g.fillRect(18, 9, 4, 22); g.fillRect(12, 15, 16, 4); }],
+  "lm-worship": ["#0c8599", (g) => { g.beginPath(); g.arc(20, 20, 5, 0, Math.PI * 2); g.fill(); }],
+  "lm-hospital": ["#e03131", (g) => { g.fillRect(17, 10, 6, 20); g.fillRect(10, 17, 20, 6); }],
+  "lm-clinic": ["#f06595", (g) => { g.fillRect(18, 12, 4, 16); g.fillRect(12, 18, 16, 4); }],
+  "lm-police": ["#1864ab", (g) => { // shield
+    g.beginPath(); g.moveTo(20, 9); g.lineTo(29, 13); g.quadraticCurveTo(29, 25, 20, 31); g.quadraticCurveTo(11, 25, 11, 13); g.closePath(); g.fill();
+  }],
+  "lm-school": ["#4c6ef5", (g) => { g.fillRect(11, 13, 8, 14); g.fillRect(21, 13, 8, 14); }], // open book
+  "lm-market": ["#c2255c", (g) => { g.fillRect(12, 17, 16, 11); g.beginPath(); g.moveTo(10, 17); g.lineTo(20, 10); g.lineTo(30, 17); g.closePath(); g.fill(); }],
+};
+function addLandmarks(map, dark) {
+  for (const [id, [color, draw]] of Object.entries(LANDMARK_ICONS)) if (!map.hasImage(id)) map.addImage(id, landmarkIcon(color, draw), { pixelRatio: 2 });
+  const name = ["coalesce", ["get", S.lang === "ar" ? "name:ar" : "name:en"], ["get", "name"]];
+  const has = (word) => ["in", word, ["coalesce", ["get", "name"], ""]];
+  const KINDS = ["place_of_worship", "hospital", "clinic", "doctors", "police", "school", "university", "college", "marketplace", "supermarket", "department_store"];
+  map.addLayer({
+    id: "landmarks", type: "symbol", source: "protomaps", "source-layer": "pois", minzoom: 13,
+    filter: ["all", ["in", ["get", "kind"], ["literal", KINDS]],
+      [">=", ["zoom"], ["match", ["get", "kind"], "hospital", 13, ["place_of_worship", "police", "university"], 14.5, 15.5]]],
+    layout: {
+      "icon-image": ["match", ["get", "kind"],
+        "place_of_worship", ["case",
+          ["any", ["==", ["get", "kind_detail"], "muslim"], has("جامع"), has("مسجد"), has("Mosque"), has("mosque")], "lm-mosque",
+          ["any", ["==", ["get", "kind_detail"], "christian"], has("كنيسة"), has("Church"), has("church"), has("دير")], "lm-church",
+          "lm-worship"],
+        "hospital", "lm-hospital", ["clinic", "doctors"], "lm-clinic", "police", "lm-police",
+        ["school", "university", "college"], "lm-school", "lm-market"],
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 16, 0.9, 18, 1.1],
+      "icon-padding": 4,
+      "text-field": ["step", ["zoom"], "", 16, name],
+      "text-font": ["Noto Sans Regular"], "text-size": 11.5, "text-max-width": 8,
+      "text-offset": [0, 1.3], "text-anchor": "top", "text-optional": true,
+    },
+    paint: { "text-color": dark ? "#cfd6dd" : "#3b4148", "text-halo-color": dark ? "#15171a" : "#ffffff", "text-halo-width": 1.6 },
+  });
+}
+
 async function loadStyle() {
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
   const flavor = dark ? "dark" : "light";
-  const style = await (await fetch(`data/style-${flavor}.json`)).json();
+  const style = await (await fetch(`data/style-${flavor}-${S.lang}.json`)).json();
   style.sprite = new URL(`sprites/${flavor}`, location.href).href;
   return style;
 }
 
+// Full style reload (labels language or day/night); the app's own layers are re-added on "style.load".
+async function reloadStyle() {
+  if (S.map) S.map.setStyle(await loadStyle(), { diff: false });
+}
+function setLang(lang) {
+  S.lang = lang;
+  try { localStorage.setItem(LS_LANG, lang); } catch {}
+  for (const b of $("set-lang").querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === lang);
+  reloadStyle();
+}
+
 async function initMap() {
+  try { S.lang = localStorage.getItem(LS_LANG) === "ar" ? "ar" : "en"; } catch {}
   const [pmBuf, fonts, style, rtl] = await Promise.all([
     fetch("data/basemap.pmtiles").then((r) => { if (!r.ok) throw new Error("map file " + r.status); return r.arrayBuffer(); }),
     fetch("fonts/index.json").then((r) => r.json()),
@@ -177,7 +244,7 @@ async function initMap() {
   S.map.on("dragstart", stopFollow);
   S.map.on("zoomstart", stopFollow);
   S.map.on("rotatestart", stopFollow);
-  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", async () => S.map.setStyle(await loadStyle()));
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", reloadStyle);
   setupLongPress();
 
   const el = document.createElement("div");
@@ -211,6 +278,7 @@ function addAppLayers() {
     layout: { "line-cap": "round" },
     paint: { "line-color": "#339af0", "line-width": 4, "line-dasharray": [0.5, 2] } }, firstSymbol);
 
+  addLandmarks(map, matchMedia("(prefers-color-scheme: dark)").matches);
   map.addSource("stations", { type: "geojson", data: stationsGeoJSON() });
   map.addLayer({ id: "stations-icon", type: "symbol", source: "stations",
     layout: {
@@ -797,6 +865,7 @@ $("dlg-station").addEventListener("close", () => {
 /* ---------- settings ---------- */
 async function openSettings() {
   $("set-voice").checked = Voice.enabled;
+  for (const b of $("set-lang").querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === S.lang);
   $("set-user-count").textContent = `(${S.stations.filter((s) => s.user).length})`;
   const inst = await Offline.installed().catch(() => null);
   $("set-offline").innerHTML = inst
@@ -906,6 +975,7 @@ function wire() {
     if (Voice.enabled) Voice.say("Voice directions on", true);
   };
   $("btn-update").onclick = () => runSync(true);
+  $("set-lang").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b && b.dataset.v !== S.lang) setLang(b.dataset.v); });
   $("kind-filter").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) setGovOnly(b.dataset.v === "gov"); });
   $("st-kind").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b && S.selected) setKind(S.selected, b.dataset.v); });
   $("btn-export").onclick = async () => {

@@ -20,6 +20,7 @@ The Home Screen app keeps its own copy, separate from Safari. That's why step 3 
 - **List**: every station, sorted by drive time from where you are.
 - **Start**: turn-by-turn directions with voice. It reroutes by itself if you miss a turn. Keep the app open and the screen on while driving.
 - **Preview drive**: a fake drive along the route, so you can try it at home.
+- **Driving map**: large street names, one-way arrows, and landmarks to steer by (mosques, churches, hospitals, clinics, police, schools, markets). Night colours follow the phone's dark mode. **Settings → Map labels** switches names between English and العربية.
 - **Long-press the map**: add a gas station that isn't on the map, or set your location by hand. Use this when testing outside Mosul.
 
 ## How it works

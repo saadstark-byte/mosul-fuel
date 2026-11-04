@@ -63,7 +63,7 @@
         <button id="search-clear" type="button" aria-label="Clear search" hidden>✕</button>
       </div>
       <div id="kind-filter" class="seg" role="group" aria-label="Which stations to show">
-        <button type="button" data-v="gov" class="on">Government only · حكومي</button>
+        <button type="button" data-v="gov" class="on">Government · حكومي</button>
         <button type="button" data-v="all">All stations</button>
       </div>
       <button id="btn-nearest" class="primary big" type="button">
@@ -147,6 +147,12 @@
     <form method="dialog">
       <h2>Mosul Fuel</h2>
       <label class="toggle"><input type="checkbox" id="set-voice"> Voice directions</label>
+      <div class="set-row"><b>Map labels</b>
+        <div id="set-lang" class="seg" role="group" aria-label="Map label language">
+          <button type="button" data-v="en">English</button>
+          <button type="button" data-v="ar">العربية</button>
+        </div>
+      </div>
       <div class="box">
         <div id="set-offline"></div>
         <button type="button" id="btn-update" class="secondary">Check for updates</button>
