@@ -8,7 +8,7 @@ const LS_VOICE = "mfuel.voice";
 
 const S = {
   map: null, graph: null, swOk: false,
-  stations: [], places: [], fonts: {}, placeMarker: null,
+  stations: [], places: [], fonts: {}, placeMarker: null, userKinds: {}, kindData: {}, govOnly: true,
   me: null, gps: null, costs: null, rankedAt: null,
   selected: null, preview: null, previewAt: null, routes: [], routeIdx: 0,
   nav: null, navRoute: null, follow: true, sim: null, lastReroute: 0, lastFix: null,
@@ -46,6 +46,46 @@ const stationTitle = (s) => s.name || s.nameEn || "Gas station";
 const PUMP_PATH = "M19.8 7.6 16.2 4l-1.1 1.1 2 2a2.4 2.4 0 0 0 .7 4.3V18a1 1 0 0 1-2 0v-4.5a2 2 0 0 0-2-2H13V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v16h10v-8h1.3v4.5a3 3 0 0 0 6 0V9a2 2 0 0 0-.5-1.4zM11 10H5V5h6zm7.5 1a1 1 0 1 1 0-2 1 1 0 0 1 0 2z";
 const PUMP_SVG = `<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" fill-rule="evenodd" d="${PUMP_PATH}"/></svg>`;
 const byId = (id) => S.stations.find((s) => s.id === id);
+
+/* ---------- government (حكومي) vs commercial (تجاري) ---------- */
+const LS_KINDS = "mfuel.kinds.v1";
+const LS_GOVONLY = "mfuel.govOnly";
+const KIND_NAME = { gov: "Government", com: "Commercial", "": "Not sure" };
+function loadUserKinds() { try { return JSON.parse(localStorage.getItem(LS_KINDS) || "{}"); } catch { return {}; } }
+function saveUserKinds() { try { localStorage.setItem(LS_KINDS, JSON.stringify(S.userKinds)); } catch { toast("Could not save on this phone"); } }
+function guessKind(s) {
+  const t = [s.name, s.nameAr, s.nameEn, s.operator, s.note].join(" ");
+  if (/تجار|commercial/i.test(t)) return "com";
+  if (/غاز|lpg/i.test(t)) return ""; // LPG (car gas) outlets, not petrol
+  if (/حكوم|government|450|٤٥٠/i.test(t)) return "gov";
+  return "";
+}
+// your own marking wins, then the station list from Jelekan, then a guess from the name
+function kindOf(s) { return S.userKinds[s.id] ?? S.kindData[s.id] ?? guessKind(s); }
+function kindSource(s) { return s.id in S.userKinds ? "marked by you" : s.id in S.kindData ? "from the station list" : guessKind(s) ? "guessed from the name" : ""; }
+function shown() { return S.govOnly ? S.stations.filter((s) => kindOf(s) === "gov") : S.stations; }
+function setGovOnly(on, remember = true) {
+  S.govOnly = on;
+  if (remember) try { localStorage.setItem(LS_GOVONLY, on ? "1" : "0"); } catch {}
+  for (const b of $("kind-filter").querySelectorAll("button")) b.classList.toggle("on", (b.dataset.v === "gov") === on);
+  $("nearest-label").textContent = on ? "Nearest government station" : "Nearest gas station";
+  refreshStationsLayer();
+  renderList();
+}
+function setKind(s, v) {
+  S.userKinds[s.id] = v;
+  saveUserKinds();
+  refreshStationsLayer();
+  renderList();
+  if (S.selected === s) renderKind(s);
+  if (S.govOnly && v !== "gov") toast("Hidden from the map and list, because “Government only” is on");
+}
+function renderKind(s) {
+  const k = kindOf(s);
+  for (const b of $("st-kind").querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === k);
+  const src = kindSource(s);
+  $("st-kind-note").textContent = (k === "gov" ? "Government price: 450 IQD/L regular · 850 enhanced" : k === "com" ? "Commercial (تجاري) prices" : "Type unknown. Mark it if you know.") + (src ? ` · ${src}` : "");
+}
 
 /* ---------- maneuver arrows ---------- */
 function arrowSvg(mod, exit) {
@@ -148,7 +188,7 @@ async function initMap() {
 
 function addAppLayers() {
   const map = S.map;
-  for (const [id, color] of [["fuel-osm", "#f08c00"], ["fuel-user", "#7048e8"], ["fuel-sel", "#e03131"]]) {
+  for (const [id, color] of [["fuel-osm", "#f08c00"], ["fuel-user", "#7048e8"], ["fuel-sel", "#e03131"], ["fuel-gov", "#2b8a3e"], ["fuel-com", "#868e96"]]) {
     if (!map.hasImage(id)) map.addImage(id, fuelIcon(color), { pixelRatio: 2 });
   }
   const firstSymbol = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
@@ -174,7 +214,7 @@ function addAppLayers() {
   map.addSource("stations", { type: "geojson", data: stationsGeoJSON() });
   map.addLayer({ id: "stations-icon", type: "symbol", source: "stations",
     layout: {
-      "icon-image": ["case", ["get", "user"], "fuel-user", "fuel-osm"],
+      "icon-image": ["match", ["get", "kind"], "gov", "fuel-gov", "com", "fuel-com", ["case", ["get", "user"], "fuel-user", "fuel-osm"]],
       "icon-size": ["interpolate", ["linear"], ["zoom"], 9, 0.55, 13, 0.85, 16, 1.05],
       "icon-allow-overlap": true,
       "text-field": ["step", ["zoom"], "", 13.5, ["get", "label"]],
@@ -187,9 +227,9 @@ function addAppLayers() {
 }
 
 function stationsGeoJSON() {
-  return { type: "FeatureCollection", features: S.stations.map((s) => ({
+  return { type: "FeatureCollection", features: shown().map((s) => ({
     type: "Feature", geometry: { type: "Point", coordinates: [s.lon, s.lat] },
-    properties: { id: s.id, label: stationTitle(s), user: !!s.user },
+    properties: { id: s.id, label: stationTitle(s), user: !!s.user, kind: kindOf(s) },
   })) };
 }
 function refreshStationsLayer() { S.map?.getSource("stations")?.setData(stationsGeoJSON()); }
@@ -246,16 +286,22 @@ function closeMenu() { $("menu").hidden = true; }
 
 /* ---------- graph & stations ---------- */
 async function loadData() {
-  const [stations, ways, buf, places] = await Promise.all([
+  const [stations, ways, buf, places, kinds] = await Promise.all([
     fetch("data/stations.json").then((r) => r.json()),
     fetch("data/graph-ways.json").then((r) => r.json()),
     fetch("data/graph.bin").then((r) => r.arrayBuffer()),
     fetch("data/places.json").then((r) => (r.ok ? r.json() : [])).catch(() => []),
+    fetch("data/station-kinds.json").then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
   ]);
   S.places = places;
+  S.kindData = kinds.kinds || {};
+  S.userKinds = loadUserKinds();
   S.stations = stations.concat(loadUserStations().map((s) => ({ ...s, user: true })));
-  refreshStationsLayer();
-  renderList();
+  // your own choice wins; otherwise show government only once enough stations are known to be government
+  let saved = null;
+  try { saved = localStorage.getItem(LS_GOVONLY); } catch {}
+  S.govOnly = saved != null ? saved === "1" : S.stations.filter((s) => kindOf(s) === "gov").length >= 5;
+  setGovOnly(S.govOnly, false); // also draws the stations and the list
   await new Promise((r) => setTimeout(r, 30)); // let the map paint first
   S.graph = new RoadGraph(buf, ways);
   S.stations.forEach(snapStation);
@@ -320,7 +366,7 @@ function goToPlace(i) {
   S.placeMarker?.remove();
   S.placeMarker = new maplibregl.Marker({ color: "#1c7ed6" }).setLngLat([lon, lat]).addTo(S.map);
   const b = new maplibregl.LngLatBounds([lon, lat], [lon, lat]);
-  S.stations.map((s) => [Geo.dist(lat, lon, s.lat, s.lon), s]).sort((x, y) => x[0] - y[0]).slice(0, 3).forEach(([, s]) => b.extend([s.lon, s.lat]));
+  shown().map((s) => [Geo.dist(lat, lon, s.lat, s.lon), s]).sort((x, y) => x[0] - y[0]).slice(0, 3).forEach(([, s]) => b.extend([s.lon, s.lat]));
   renderList();
   S.map.fitBounds(b, { padding: { top: 90, bottom: $("sheet").offsetHeight + 40, left: 50, right: 50 }, maxZoom: 15, duration: 900 });
 }
@@ -332,7 +378,7 @@ function endSearchMode() {
 function renderList() {
   const q = $("search").value.trim();
   const match = q ? matcher(q) : null;
-  let stations = S.stations;
+  let stations = shown();
   if (match) stations = stations.filter((s) => match([s.name, s.nameEn, s.nameAr, s.brand, s.operator, s.street, s.note].join(" ")));
   const rows = stations.map((s) => ({
     s, c: S.costs?.get(s.id) || null,
@@ -369,16 +415,18 @@ function renderList() {
     $("list-title").textContent = `Near ${near.name}`;
     $("list-sub").textContent = "distance from there";
   } else {
-    $("list-title").textContent = `Gas stations (${S.stations.length})`;
+    $("list-title").textContent = `${S.govOnly ? "Government stations" : "Gas stations"} (${stations.length})`;
     $("list-sub").textContent = S.costs ? "by road from you" : S.me ? (S.graph ? "straight line · you're away from the roads" : "straight line") : "waiting for location…";
   }
-  const empty = match && !rows.length && !placeRows ? `<li class="empty">Nothing found. Try the Arabic or English spelling.</li>` : "";
+  const empty = match && !rows.length && !placeRows ? `<li class="empty">Nothing found. Try the Arabic or English spelling.${S.govOnly ? " (Showing government stations only.)" : ""}</li>`
+    : !match && !rows.length && S.govOnly ? `<li class="empty">No stations are marked as government yet. Tap “All stations”, open a station, and mark it Government.</li>` : "";
   $("list").innerHTML = placeRows + empty + rows.map(({ s, c, d, dn }) => {
     const second = s.nameEn && s.nameEn !== s.name ? s.nameEn : s.user ? (s.note || "Added by you") : (s.street || s.brand || s.nameAr || "");
     const dist = dn != null ? `<b>${Fmt.dist(dn)}</b><span>from there</span>`
       : c ? `<b>${Fmt.time(c.time)}</b><span>${Fmt.dist(c.meters)}</span>`
       : d != null ? `<b>${Fmt.dist(d)}</b><span>straight</span>` : "";
-    return `<li data-id="${esc(s.id)}"><div class="ico ${s.user ? "user" : ""}">${PUMP_SVG}</div>
+    const k = kindOf(s);
+    return `<li data-id="${esc(s.id)}"><div class="ico ${k || (s.user ? "user" : "")}" title="${KIND_NAME[k]}">${PUMP_SVG}</div>
       <div class="names"><div class="n1" dir="auto">${esc(stationTitle(s))}</div><div class="n2" dir="auto">${esc(second)}</div></div>
       <div class="d">${dist}</div></li>`;
   }).join("");
@@ -388,6 +436,7 @@ function renderList() {
 function showView(name) {
   for (const v of ["home", "station", "nav"]) $("view-" + v).hidden = v !== name;
   $("sheet").classList.toggle("nav", name === "nav");
+  $("sheet").classList.toggle("tall", name === "station");
   $("sheet").classList.remove("expanded");
 }
 
@@ -407,6 +456,7 @@ function selectStation(id) {
   if (s.fuels) meta.push("Fuel: " + s.fuels.join(", "));
   if (s.street) meta.push("Street: " + s.street);
   $("st-meta").textContent = meta.join("\n");
+  renderKind(s);
   $("st-user-actions").hidden = !s.user;
   showView("station");
   computePreview(true);
@@ -721,18 +771,22 @@ function openStationDialog(existing) {
   $("dlg-title").textContent = existing ? "Edit gas station" : "Add gas station";
   $("f-name").value = existing?.name || "";
   $("f-note").value = existing?.note || "";
+  $("f-gov").checked = existing ? kindOf(existing) === "gov" : true;
   $("dlg-station").showModal();
 }
 $("dlg-station").addEventListener("close", () => {
   if ($("dlg-station").returnValue !== "save") return;
   const name = $("f-name").value.trim(), note = $("f-note").value.trim();
+  const kind = $("f-gov").checked ? "gov" : "";
   if (S.editing) {
     Object.assign(S.editing, { name, note });
+    S.userKinds[S.editing.id] = kind; saveUserKinds();
     saveUserStations(); refreshStationsLayer(); renderList(); selectStation(S.editing.id);
   } else if (S.menuAt) {
     const s = { id: "u-" + Date.now().toString(36), lat: +S.menuAt.lat.toFixed(7), lon: +S.menuAt.lng.toFixed(7), name, note, user: true };
     snapStation(s);
     S.stations.push(s);
+    S.userKinds[s.id] = kind; saveUserKinds();
     saveUserStations(); refreshStationsLayer();
     if (S.me) rank(); else renderList();
     toast("Gas station saved on this phone");
@@ -815,9 +869,10 @@ function wire() {
   $("btn-nearest").onclick = () => {
     if (!S.me) return toast("Waiting for your location… or long-press the map to set it.");
     let best = null;
-    if (S.costs) for (const s of S.stations) { const c = S.costs.get(s.id); if (c && (!best || c.time < best.c)) best = { s, c: c.time }; }
-    if (!best) for (const s of S.stations) { const d = Geo.dist(S.me.lat, S.me.lon, s.lat, s.lon); if (!best || d < best.c) best = { s, c: d }; }
+    if (S.costs) for (const s of shown()) { const c = S.costs.get(s.id); if (c && (!best || c.time < best.c)) best = { s, c: c.time }; }
+    if (!best) for (const s of shown()) { const d = Geo.dist(S.me.lat, S.me.lon, s.lat, s.lon); if (!best || d < best.c) best = { s, c: d }; }
     if (best) selectStation(best.s.id);
+    else toast("No government stations marked yet. Switch to “All stations”.");
   };
   $("btn-locate").onclick = () => {
     if (S.me?.manual) { S.me = null; if (S.gps) setMe(S.gps); toast("Back to GPS location"); }
@@ -851,8 +906,13 @@ function wire() {
     if (Voice.enabled) Voice.say("Voice directions on", true);
   };
   $("btn-update").onclick = () => runSync(true);
+  $("kind-filter").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) setGovOnly(b.dataset.v === "gov"); });
+  $("st-kind").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b && S.selected) setKind(S.selected, b.dataset.v); });
   $("btn-export").onclick = async () => {
-    const data = JSON.stringify(S.stations.filter((s) => s.user).map(({ id, lat, lon, name, note }) => ({ id, lat, lon, name, note })));
+    const data = JSON.stringify({
+      stations: S.stations.filter((s) => s.user).map(({ id, lat, lon, name, note }) => ({ id, lat, lon, name, note })),
+      kinds: S.userKinds,
+    });
     try { await navigator.clipboard.writeText(data); toast("Copied. Paste it in Notes to keep it safe."); }
     catch { prompt("Copy this backup:", data); }
   };
@@ -860,7 +920,12 @@ function wire() {
     const txt = prompt("Paste your backup here:");
     if (!txt) return;
     try {
-      const list = JSON.parse(txt);
+      const data = JSON.parse(txt);
+      const list = Array.isArray(data) ? data : data.stations || []; // older backups were just the station list
+      if (!Array.isArray(data) && data.kinds && typeof data.kinds === "object") {
+        for (const [id, k] of Object.entries(data.kinds)) if (["gov", "com", ""].includes(k)) S.userKinds[id] = k;
+        saveUserKinds();
+      }
       let n = 0;
       for (const u of list) {
         if (typeof u.lat !== "number" || typeof u.lon !== "number" || byId(u.id)) continue;

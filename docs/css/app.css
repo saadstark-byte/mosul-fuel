@@ -83,6 +83,17 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .sheet.searching { max-height: none; top: calc(var(--safe-top) + 12px); }
 .sheet.searching #btn-nearest { display: none; }
 .list .ico.place { background: #1c7ed6; }
+.list .ico.gov { background: #2b8a3e; }
+.list .ico.com { background: #868e96; }
+.seg { display: flex; gap: 3px; padding: 3px; margin-bottom: 10px; background: var(--bg2); border-radius: 11px; flex: none; }
+.seg button { flex: 1; padding: 8px 6px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.seg button.on { background: var(--bg); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
+#kind-filter button.on[data-v="gov"], #st-kind button.on[data-v="gov"] { background: #2b8a3e; color: #fff; }
+.st-kind { margin: 12px 0 4px; }
+.sheet.tall { max-height: 66vh; }
+#view-station { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+#view-station > * { flex: none; }
+.sheet.searching #kind-filter { display: none; }
 .list .empty { justify-content: center; color: var(--muted); cursor: default; padding: 22px 4px; text-align: center; }
 .list-head { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 2px 6px; font-weight: 700; }
 .list-head .muted { font-weight: 400; font-size: 13px; }

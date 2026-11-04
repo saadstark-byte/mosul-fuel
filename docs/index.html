@@ -62,9 +62,13 @@
         <input id="search" type="search" placeholder="Search stations or places / ابحث" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" dir="auto" aria-label="Search stations or places">
         <button id="search-clear" type="button" aria-label="Clear search" hidden>✕</button>
       </div>
+      <div id="kind-filter" class="seg" role="group" aria-label="Which stations to show">
+        <button type="button" data-v="gov" class="on">Government only · حكومي</button>
+        <button type="button" data-v="all">All stations</button>
+      </div>
       <button id="btn-nearest" class="primary big" type="button">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19.8 7.6 16.2 4l-1.1 1.1 2 2a2.4 2.4 0 0 0 .7 4.3V18a1 1 0 0 1-2 0v-4.5a2 2 0 0 0-2-2H13V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v16h10v-8h1.3v4.5a3 3 0 0 0 6 0V9a2 2 0 0 0-.5-1.4zM11 10H5V5h6zm7.5 1a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
-        <span>Nearest gas station</span>
+        <span id="nearest-label">Nearest government station</span>
       </button>
       <div class="list-head">
         <span id="list-title">Gas stations</span>
@@ -84,6 +88,12 @@
       <div id="st-route" class="st-route"></div>
       <div id="st-alts" class="alts" hidden></div>
       <div id="st-meta" class="st-meta"></div>
+      <div id="st-kind" class="seg st-kind" role="group" aria-label="Station type">
+        <button type="button" data-v="gov">Government</button>
+        <button type="button" data-v="com">Commercial</button>
+        <button type="button" data-v="">Not sure</button>
+      </div>
+      <div id="st-kind-note" class="muted small"></div>
       <div class="row">
         <button id="btn-go" class="primary" type="button">Start</button>
         <button id="btn-sim" class="secondary" type="button">Preview drive</button>
@@ -124,6 +134,7 @@
       <h2 id="dlg-title">Add gas station</h2>
       <label>Name<input id="f-name" name="name" dir="auto" autocomplete="off" placeholder="e.g. محطة الحامد"></label>
       <label>Note<textarea id="f-note" name="note" dir="auto" rows="3" placeholder="Opening hours, fuel types, prices…"></textarea></label>
+      <label class="toggle"><input type="checkbox" id="f-gov"> Government station (450 / 850)</label>
       <div class="row">
         <button value="cancel" class="secondary" type="submit">Cancel</button>
         <button value="save" class="primary" type="submit">Save</button>

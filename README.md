@@ -14,7 +14,9 @@ The Home Screen app keeps its own copy, separate from Safari. That's why step 3 
 ## Using it
 
 - **Search**: find a station or a place (neighbourhood, village) in Arabic or English. Pick a place to see the stations closest to it.
+- **Government only / All stations**: show only government stations (حكومي, 450 IQD/L regular, 850 enhanced) or every station. Open a station to mark it Government, Commercial or Not sure. Your marks are saved on the phone and included in the backup.
 - **Nearest gas station**: picks the station with the shortest drive time.
+- **Route choices**: up to 3 routes, named by the road that makes each one different. Tap a card or a grey line to pick one.
 - **List**: every station, sorted by drive time from where you are.
 - **Start**: turn-by-turn directions with voice. It reroutes by itself if you miss a turn. Keep the app open and the screen on while driving.
 - **Preview drive**: a fake drive along the route, so you can try it at home.
@@ -27,6 +29,7 @@ The Home Screen app keeps its own copy, separate from Safari. That's why step 3 
 | Map | `docs/data/basemap.pmtiles` (7.8 MB vector tiles) | OpenStreetMap via Protomaps |
 | Roads for routing | `docs/data/graph.bin` (175k road points) | OpenStreetMap via Overpass |
 | Gas stations | `docs/data/stations.json` (81) | OpenStreetMap `amenity=fuel`, kept by `tools/filter_stations.js`: Mosul city, within 1.5 km of the Bozan–Tel Kaif–Mosul road, plus Alqosh |
+| Government / commercial | `docs/data/station-kinds.json` (`{"kinds": {"<station id>": "gov" or "com"}}`) | Station list from the Jelekan app's developer; names containing حكومي or 450 count as government until then |
 | Place names for search | `docs/data/places.json` (581) | OpenStreetMap `place=*` |
 | Routing | `docs/js/router.js` (Dijkstra / A* on the phone) | — |
 | Directions | `docs/js/nav.js` | — |
