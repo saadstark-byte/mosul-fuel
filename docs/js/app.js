@@ -500,12 +500,86 @@ function renderList() {
   }).join("");
 }
 
+/* ---------- bottom card: swipe between small, half and full ---------- */
+function sheetState() {
+  const c = $("sheet").classList;
+  return c.contains("collapsed") ? "min" : c.contains("expanded") ? "max" : "mid";
+}
+function setSheet(state) {
+  const c = $("sheet").classList;
+  c.toggle("collapsed", state === "min");
+  c.toggle("expanded", state === "max");
+}
+function sheetHeights() {
+  const sh = $("sheet"), vh = innerHeight;
+  const safe = parseFloat(getComputedStyle(sh).paddingBottom) - 12 || 0;
+  const tall = sh.classList.contains("tall");
+  return { min: (tall ? 150 : 96) + safe, mid: vh * (tall ? 0.66 : 0.46), max: vh * 0.86 };
+}
+function setupSheetDrag() {
+  const sheet = $("sheet");
+  let d = null; // current gesture
+  const scrollerOf = (el) => el.closest?.("#list, #view-station");
+  const begin = (y, target) => {
+    if (sheet.classList.contains("nav")) return;
+    const t = performance.now();
+    d = { y0: y, h0: sheet.offsetHeight, scroller: target.closest?.("#grip") ? null : scrollerOf(target), dragging: false, lastY: y, lastT: t, v: 0 };
+  };
+  const move = (y, e) => {
+    if (!d) return;
+    const dy = y - d.y0;
+    if (!d.dragging) {
+      if (Math.abs(dy) < 8) return;
+      const sc = d.scroller;
+      // inside the list: let it scroll, unless it's at the top and you pull down, or the card can still grow
+      if (sc && !(dy > 0 && sc.scrollTop <= 0) && !(dy < 0 && sheetState() !== "max")) { d = null; return; }
+      d.dragging = true;
+      d.y0 = y;
+      if (sheet.classList.contains("searching")) { $("search").blur(); sheet.classList.remove("searching"); d.h0 = sheet.offsetHeight; }
+      sheet.classList.add("dragging");
+    }
+    if (e.cancelable) e.preventDefault();
+    const H = sheetHeights();
+    sheet.style.maxHeight = Math.max(H.min, Math.min(H.max, d.h0 - (y - d.y0))) + "px";
+    const now = performance.now();
+    d.v = (y - d.lastY) / Math.max(1, now - d.lastT); // px per ms, + = moving down
+    d.lastY = y; d.lastT = now;
+  };
+  const finish = () => {
+    if (!d) return;
+    const g = d; d = null;
+    if (!g.dragging) return;
+    S.sheetDragged = true; setTimeout(() => (S.sheetDragged = false), 50); // don't treat the drag as a tap
+    const h = sheet.offsetHeight, H = sheetHeights();
+    sheet.classList.remove("dragging");
+    sheet.style.maxHeight = "";
+    let state;
+    if (g.v > 0.4) state = h > H.mid + 10 ? "mid" : "min";        // flicked down
+    else if (g.v < -0.4) state = h < H.mid - 10 ? "mid" : "max";  // flicked up
+    else state = ["min", "mid", "max"].reduce((a, b) => (Math.abs(H[b] - h) < Math.abs(H[a] - h) ? b : a)); // nearest
+    setSheet(state);
+    if (state !== "max") $("list").scrollTop = 0;
+  };
+  sheet.addEventListener("touchstart", (e) => { if (e.touches.length === 1) begin(e.touches[0].clientY, e.target); }, { passive: true });
+  sheet.addEventListener("touchmove", (e) => move(e.touches[0].clientY, e), { passive: false });
+  sheet.addEventListener("touchend", finish);
+  sheet.addEventListener("touchcancel", finish);
+  // mouse (desktop): drag the handle
+  $("grip").addEventListener("mousedown", (e) => {
+    begin(e.clientY, e.target);
+    const mm = (ev) => move(ev.clientY, ev);
+    const mu = () => { finish(); removeEventListener("mousemove", mm); removeEventListener("mouseup", mu); };
+    addEventListener("mousemove", mm);
+    addEventListener("mouseup", mu);
+  });
+}
+
 /* ---------- station view & route preview ---------- */
 function showView(name) {
   for (const v of ["home", "station", "nav"]) $("view-" + v).hidden = v !== name;
   $("sheet").classList.toggle("nav", name === "nav");
   $("sheet").classList.toggle("tall", name === "station");
-  $("sheet").classList.remove("expanded");
+  $("sheet").classList.remove("expanded", "collapsed");
 }
 
 function selectStation(id) {
@@ -903,7 +977,7 @@ function wire() {
     selectStation(li.dataset.id);
   });
   const search = $("search");
-  search.addEventListener("focus", () => $("sheet").classList.add("searching"));
+  search.addEventListener("focus", () => { $("sheet").classList.remove("collapsed"); $("sheet").classList.add("searching"); });
   search.addEventListener("input", () => {
     S.near = null;
     $("search-clear").hidden = !search.value;
@@ -921,8 +995,10 @@ function wire() {
     endSearchMode();
     renderList();
   };
-  $("grip").addEventListener("click", () => $("sheet").classList.toggle("expanded"));
-  document.querySelector(".list-head").addEventListener("click", () => $("sheet").classList.toggle("expanded"));
+  setupSheetDrag();
+  // tap the handle: small ↔ half; tap the list header: half ↔ full
+  $("grip").addEventListener("click", () => { if (!S.sheetDragged) setSheet(sheetState() === "min" ? "mid" : "min"); });
+  document.querySelector(".list-head").addEventListener("click", () => setSheet(sheetState() === "max" ? "mid" : "max"));
   $("btn-close-station").onclick = closeStation;
   $("st-alts").addEventListener("click", (e) => { const b = e.target.closest("button[data-i]"); if (b) chooseRoute(+b.dataset.i); });
   $("btn-go").onclick = () => startNav(false);
