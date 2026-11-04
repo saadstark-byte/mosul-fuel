@@ -1,12 +1,12 @@
 # Mosul Fuel
 
-An offline map of every gas station between Mosul and Tel Kaif, with driving routes and spoken turn-by-turn directions. It runs as a web app saved to the iPhone Home Screen, so it needs no App Store, no Apple developer account, and no internet once it's installed.
+An offline map of every gas station between Mosul, Tel Kaif and Bozan, with driving routes and spoken turn-by-turn directions. It runs as a web app saved to the iPhone Home Screen, so it needs no App Store, no Apple developer account, and no internet once it's installed.
 
 ## Install on iPhone
 
 1. With internet, open the app's link in **Safari**.
 2. Tap **Share**, then **Add to Home Screen**.
-3. Open **Mosul Fuel** from the Home Screen and wait until the top says **Offline ready** (about 15 MB).
+3. Open **Mosul Fuel** from the Home Screen and wait until the top says **Offline ready** (about 19 MB).
 4. Turn on Airplane Mode and open it again to check that it works.
 
 The Home Screen app keeps its own copy, separate from Safari. That's why step 3 must happen in the Home Screen app. If you delete the app from the Home Screen, its saved copy and your added stations are deleted too.
@@ -23,9 +23,9 @@ The Home Screen app keeps its own copy, separate from Safari. That's why step 3 
 
 | Part | File | Source |
 |---|---|---|
-| Map | `docs/data/basemap.pmtiles` (5.6 MB vector tiles) | OpenStreetMap via Protomaps |
-| Roads for routing | `docs/data/graph.bin` (130k road points) | OpenStreetMap via Overpass |
-| Gas stations | `docs/data/stations.json` (109) | OpenStreetMap `amenity=fuel` |
+| Map | `docs/data/basemap.pmtiles` (7.8 MB vector tiles) | OpenStreetMap via Protomaps |
+| Roads for routing | `docs/data/graph.bin` (175k road points) | OpenStreetMap via Overpass |
+| Gas stations | `docs/data/stations.json` (149) | OpenStreetMap `amenity=fuel` |
 | Routing | `docs/js/router.js` (Dijkstra / A* on the phone) | — |
 | Directions | `docs/js/nav.js` | — |
 | Offline saving | `docs/sw.js`, `docs/js/offline.js` | — |

@@ -2,7 +2,7 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const HOME = { center: [43.135, 36.37], zoom: 11.3 };
+const HOME = { center: [43.14, 36.46], zoom: 10.4 };
 const LS_USER = "mfuel.userStations.v1";
 const LS_VOICE = "mfuel.voice";
 
@@ -123,7 +123,7 @@ async function initMap() {
 
   S.map = new maplibregl.Map({
     container: "map", style, center: HOME.center, zoom: HOME.zoom,
-    minZoom: 9, maxZoom: 18.5, maxBounds: [[42.55, 35.95], [43.7, 36.85]],
+    minZoom: 9, maxZoom: 18.5, maxBounds: [[42.55, 35.95], [43.75, 37.05]],
     attributionControl: { compact: true }, touchPitch: false,
   });
   S.map.on("style.load", addAppLayers);
@@ -332,7 +332,7 @@ function computePreview(fit) {
   else if (!S.me) msg = "Turn on location (or long-press the map → “Set my location here”) to get a route.";
   else {
     const sn = S.graph.snap(S.me.lat, S.me.lon, 400);
-    if (!sn) msg = `${Fmt.dist(Geo.dist(S.me.lat, S.me.lon, s.lat, s.lon))} away in a straight line. You're outside the road map (Mosul – Tel Kaif), so no route.`;
+    if (!sn) msg = `${Fmt.dist(Geo.dist(S.me.lat, S.me.lon, s.lat, s.lon))} away in a straight line. You're outside the road map (Mosul – Tel Kaif – Bozan), so no route.`;
     else if (s.node < 0) msg = "This station is too far from any mapped road to route to.";
     else {
       const p = S.graph.path(sn, s.node);

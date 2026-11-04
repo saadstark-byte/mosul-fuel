@@ -235,7 +235,7 @@ def write_info():
     import datetime
     stamp = datetime.datetime.fromtimestamp((RAW / "roads.json").stat().st_mtime)
     with open(OUT / "info.json", "w", encoding="utf-8") as f:
-        json.dump({"date": stamp.strftime("%Y-%m-%d"), "area": "Mosul - Tel Kaif"}, f)
+        json.dump({"date": stamp.strftime("%Y-%m-%d"), "area": "Mosul - Tel Kaif - Bozan"}, f)
 
 
 if __name__ == "__main__":
