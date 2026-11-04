@@ -7,8 +7,11 @@ const path = require("path");
 
 const DOCS = path.resolve(__dirname, "..", "docs");
 const MOSUL_BOX = { south: 36.26, north: 36.44, west: 43.02, east: 43.24 }; // Mosul city and its edge
-const ROUTE_FROM = [36.73452, 43.12915]; // Bozan
-const ROUTE_TO = [36.345, 43.13];        // central Mosul
+const ROUTE_VIA = [                      // the trip: Bozan → Tel Kaif → central Mosul
+  [36.73452, 43.12915],
+  [36.4906, 43.1196],
+  [36.345, 43.13],
+];
 const CORRIDOR_M = 1500;                 // how far from that road a station may be
 const NOT_FOR_CARS = /معمل|غاز المنزلي/;  // LPG bottling plants / household gas shops
 const ALSO_KEEP = new Set([
@@ -24,11 +27,17 @@ const buf = fs.readFileSync(path.join(DOCS, "data/graph.bin"));
 const G = new ctx.RoadGraph(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length),
   JSON.parse(fs.readFileSync(path.join(DOCS, "data/graph-ways.json"), "utf8")));
 
-const start = G.snap(ROUTE_FROM[0], ROUTE_FROM[1], 1000);
-const goal = G.destNode(G.snap(ROUTE_TO[0], ROUTE_TO[1], 1000));
-const route = G.path(start, goal);
-if (!route) throw new Error("No route from Bozan to Mosul");
-const pts = route.nodes.map((v) => [G.lat[v], G.lon[v]]);
+const pts = [];
+let km = 0;
+for (let i = 0; i + 1 < ROUTE_VIA.length; i++) {
+  const start = G.snap(ROUTE_VIA[i][0], ROUTE_VIA[i][1], 1000);
+  const goal = G.destNode(G.snap(ROUTE_VIA[i + 1][0], ROUTE_VIA[i + 1][1], 1000));
+  const leg = G.path(start, goal);
+  if (!leg) throw new Error("No route for leg " + i);
+  km += leg.meters / 1000;
+  leg.nodes.forEach((v) => pts.push([G.lat[v], G.lon[v]]));
+}
+const route = { meters: km * 1000 };
 const nearRoad = (s) => pts.some(([la, lo]) => ctx.Geo.dist(s.lat, s.lon, la, lo) <= CORRIDOR_M);
 const inMosul = (s) => s.lat >= MOSUL_BOX.south && s.lat <= MOSUL_BOX.north && s.lon >= MOSUL_BOX.west && s.lon <= MOSUL_BOX.east;
 

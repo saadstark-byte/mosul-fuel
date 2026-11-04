@@ -10,7 +10,7 @@ const S = {
   map: null, graph: null, swOk: false,
   stations: [], places: [], fonts: {}, placeMarker: null,
   me: null, gps: null, costs: null, rankedAt: null,
-  selected: null, preview: null, previewAt: null,
+  selected: null, preview: null, previewAt: null, routes: [], routeIdx: 0,
   nav: null, navRoute: null, follow: true, sim: null, lastReroute: 0, lastFix: null,
   wakeLock: null, marker: null, menuAt: null, editing: null,
 };
@@ -130,6 +130,7 @@ async function initMap() {
   // keep the map credits collapsed to an (i) button so they don't cover the route
   S.map.once("load", () => document.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
   S.map.on("click", "stations-icon", (e) => { const f = e.features?.[0]; if (f) selectStation(f.properties.id); });
+  S.map.on("click", "route-alt-line", (e) => { const f = e.features?.[0]; if (f) chooseRoute(+f.properties.i); });
   S.map.on("mouseenter", "stations-icon", () => (S.map.getCanvas().style.cursor = "pointer"));
   S.map.on("mouseleave", "stations-icon", () => (S.map.getCanvas().style.cursor = ""));
   const stopFollow = (e) => { if (e.originalEvent && S.nav) { S.follow = false; $("btn-recenter").hidden = false; } };
@@ -151,6 +152,14 @@ function addAppLayers() {
     if (!map.hasImage(id)) map.addImage(id, fuelIcon(color), { pixelRatio: 2 });
   }
   const firstSymbol = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
+  // other route choices: grey, under the chosen route, tap to pick
+  map.addSource("route-alts", { type: "geojson", data: altsGeoJSON() });
+  map.addLayer({ id: "route-alt-casing", type: "line", source: "route-alts",
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": "#5f6f68", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 6, 16, 13] } }, firstSymbol);
+  map.addLayer({ id: "route-alt-line", type: "line", source: "route-alts",
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": "#b4c3bc", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 16, 8] } }, firstSymbol);
   map.addSource("route", { type: "geojson", data: routeGeoJSON(S.nav ? S.navRoute : S.preview) });
   map.addLayer({ id: "route-casing", type: "line", source: "route", filter: ["==", ["get", "kind"], "road"],
     layout: { "line-join": "round", "line-cap": "round" },
@@ -193,7 +202,14 @@ function routeGeoJSON(r) {
   if (r.coords.length > r.roadEnd + 1) feats.push({ type: "Feature", properties: { kind: "tail" }, geometry: { type: "LineString", coordinates: r.coords.slice(r.roadEnd) } });
   return { type: "FeatureCollection", features: feats };
 }
-function drawRoute(r) { S.map?.getSource("route")?.setData(routeGeoJSON(r)); }
+function drawRoute(r) { S.map?.getSource("route")?.setData(routeGeoJSON(r)); drawAlts(); }
+function altsGeoJSON() {
+  const feats = S.nav ? [] : (S.routes || []).map((r, i) => (i === S.routeIdx ? null : {
+    type: "Feature", properties: { i }, geometry: { type: "LineString", coordinates: r.coords.slice(0, r.roadEnd + 1) },
+  })).filter(Boolean);
+  return { type: "FeatureCollection", features: feats };
+}
+function drawAlts() { S.map?.getSource("route-alts")?.setData(altsGeoJSON()); }
 
 /* ---------- long press menu ---------- */
 function setupLongPress() {
@@ -396,10 +412,93 @@ function selectStation(id) {
   computePreview(true);
 }
 
+// Name each route by a town or village that only that route passes ("via Sharafiyah").
+function labelRoutes(routes) {
+  // prefer towns, then villages, that sit on the part of the road only this route uses
+  const RANK = { town: 0, village: 1, suburb: 2 };
+  const REACH = { town: 2000, village: 800, suburb: 600 };
+  const places = S.places.filter((p) => p[5] in RANK);
+  const clean = (s) => String(s || "").replace(/^(village|qaryat|qaryah)\s+/i, "");
+  const near = (pts, lat, lon) => {
+    let d = Infinity;
+    for (const c of pts) { const x = Math.hypot((c[0] - lon) * Geo.KX, (c[1] - lat) * Geo.KY); if (x < d) d = x; }
+    return d;
+  };
+  const sampled = routes.map((r) => r.coords.filter((_, k) => k % 3 === 0));
+  const a = routes[0].coords[0], z = routes[0].coords[routes[0].coords.length - 1];
+  // a town that only this route passes; ignore the start and end areas, which every route shares
+  const cands = places.filter((p) => near([a, z], p[3], p[4]) > 3000);
+  // first choice: the longest named road that only this route uses ("via Duhok-Mosul Road")
+  const segKeys = routes.map((r) => {
+    const s = new Set();
+    for (let j = 0; j + 1 < r.nodeAt.length; j++) if (r.nodeAt[j] >= 0 && r.nodeAt[j + 1] >= 0) s.add(r.nodeAt[j] + ":" + r.nodeAt[j + 1]);
+    return s;
+  });
+  // the main route is named by its longest road; the others by a road only they use
+  const roadVia = [];
+  routes.forEach((r, i) => {
+    const meters = new Map();
+    for (let j = 0; j + 1 < r.nodeAt.length; j++) {
+      const key = r.nodeAt[j] + ":" + r.nodeAt[j + 1];
+      if (r.nodeAt[j] < 0 || (i > 0 && segKeys.some((s, k) => k !== i && s.has(key)))) continue;
+      const w = r.segWay[j];
+      if (w < 0) continue;
+      const wy = S.graph.ways[w];
+      const label = wy.nameEn || wy.name || (wy.ref ? "Road " + wy.ref : "");
+      if (label) meters.set(label, (meters.get(label) || 0) + r.cum[j + 1] - r.cum[j]);
+    }
+    let best = "", m = 1500;
+    for (const [label, v] of meters) if (v > m && (i === 0 || label !== roadVia[0])) { m = v; best = label; }
+    roadVia.push(best);
+  });
+  routes.forEach((r, i) => {
+    if (roadVia[i] && !roadVia.some((x, j) => j !== i && x === roadVia[i])) { r.via = roadVia[i]; return; }
+    let best = null;
+    for (const p of cands) {
+      const reach = REACH[p[5]];
+      const d = near(sampled[i], p[3], p[4]);
+      if (d > reach) continue;
+      if (routes.some((_, j) => j !== i && near(sampled[j], p[3], p[4]) < reach * 1.5)) continue;
+      const score = RANK[p[5]] * 10000 + d;
+      if (!best || score < best.score) best = { score, p };
+    }
+    r.via = best ? clean(best.p[1] || best.p[0]) : "";
+  });
+  const shortest = routes.reduce((a, r, i) => (r.total < routes[a].total ? i : a), 0);
+  routes.forEach((r, i) => { r.tag = i === 0 ? "Fastest" : i === shortest ? "Shortest" : ""; });
+}
+
+function chooseRoute(i) {
+  if (!S.routes?.[i] || S.nav) return;
+  S.routeIdx = i;
+  S.preview = S.routes[i];
+  renderRouteChoice();
+}
+
+function renderRouteChoice() {
+  const r = S.preview;
+  drawRoute(r);
+  const many = (S.routes || []).length > 1;
+  $("st-alts").hidden = !many;
+  if (many) {
+    $("st-alts").innerHTML = S.routes.map((x, i) => `<button type="button" class="alt${i === S.routeIdx ? " sel" : ""}" data-i="${i}">
+      <b>${Fmt.time(x.time)}</b><span>${Fmt.dist(x.total)}</span>${x.via ? `<span dir="auto">via ${esc(x.via)}</span>` : ""}${x.tag ? `<em>${x.tag}</em>` : ""}</button>`).join("");
+  }
+  if (!r) return;
+  $("st-route").innerHTML = `<b>${Fmt.time(r.time)}</b> · ${Fmt.dist(r.total)} by road${r.via ? `<div class="via" dir="auto">via ${esc(r.via)}</div>` : ""}`;
+  $("st-steps").innerHTML = r.steps.map((st, i) => {
+    const len = i < r.steps.length - 1 ? r.steps[i + 1].at - st.at : 0;
+    return `<li dir="auto">${esc(st.text)}${len ? `<span>${Fmt.dist(len)}</span>` : ""}</li>`;
+  }).join("");
+}
+
 function computePreview(fit) {
   const s = S.selected;
   if (!s) return;
+  const keepVia = !fit ? S.routes?.[S.routeIdx]?.via : null;
   S.preview = null;
+  S.routes = [];
+  S.routeIdx = 0;
   let msg = "";
   if (!S.graph) msg = "Loading roads…";
   else if (!S.me) msg = "Turn on location (or long-press the map → “Set my location here”) to get a route.";
@@ -408,31 +507,26 @@ function computePreview(fit) {
     if (!sn) msg = `${Fmt.dist(Geo.dist(S.me.lat, S.me.lon, s.lat, s.lon))} away in a straight line. You're outside the road map (Mosul – Tel Kaif – Bozan), so no route.`;
     else if (s.node < 0) msg = "This station is too far from any mapped road to route to.";
     else {
-      const p = S.graph.path(sn, s.node);
-      if (p) S.preview = buildRoute(S.graph, sn, p, s);
-      else msg = "No road route found.";
+      S.routes = S.graph.alternatives(sn, s.node, 3).map((p) => buildRoute(S.graph, sn, p, s));
+      if (S.routes.length) {
+        labelRoutes(S.routes);
+        const keep = keepVia ? S.routes.findIndex((r) => r.via === keepVia) : -1;
+        S.routeIdx = keep >= 0 ? keep : 0;
+        S.preview = S.routes[S.routeIdx];
+      } else msg = "No road route found.";
     }
     S.previewAt = { lat: S.me.lat, lon: S.me.lon };
   }
-  drawRoute(S.preview);
   $("btn-go").disabled = $("btn-sim").disabled = !S.preview;
   $("btn-go").style.opacity = $("btn-sim").style.opacity = S.preview ? 1 : 0.45;
   $("st-steps-wrap").hidden = !S.preview;
-  if (S.preview) {
-    const r = S.preview;
-    $("st-route").innerHTML = `<b>${Fmt.time(r.time)}</b> · ${Fmt.dist(r.total)} by road`;
-    $("st-steps").innerHTML = r.steps.map((st, i) => {
-      const len = i < r.steps.length - 1 ? r.steps[i + 1].at - st.at : 0;
-      return `<li dir="auto">${esc(st.text)}${len ? `<span>${Fmt.dist(len)}</span>` : ""}</li>`;
-    }).join("");
-  } else {
-    $("st-route").textContent = msg;
-  }
+  renderRouteChoice();
+  if (!S.preview) $("st-route").textContent = msg;
   if (fit) {
     const pad = { top: 90, bottom: $("sheet").offsetHeight + 30, left: 40, right: 40 };
     if (S.preview) {
       const b = new maplibregl.LngLatBounds();
-      S.preview.coords.forEach((c) => b.extend(c));
+      S.routes.forEach((r) => r.coords.forEach((c) => b.extend(c)));
       S.map.fitBounds(b, { padding: pad, maxZoom: 16.5, duration: 700 });
     } else {
       S.map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(S.map.getZoom(), 15), padding: pad, duration: 700 });
@@ -441,7 +535,7 @@ function computePreview(fit) {
 }
 
 function closeStation() {
-  S.selected = null; S.preview = null;
+  S.selected = null; S.preview = null; S.routes = [];
   setSelectedLayer(); drawRoute(null);
   showView("home");
 }
@@ -461,6 +555,7 @@ function startNav(simulate) {
   S.navRoute = S.preview;
   S.nav = makeNavigator(S.navRoute);
   S.follow = true;
+  drawAlts(); // hide the other choices while driving
   showView("nav");
   $("nav-top").hidden = false;
   $("topbar").hidden = true;
@@ -502,7 +597,9 @@ function reroute(fix) {
   S.navRoute = buildRoute(S.graph, sn, p, st);
   S.nav = makeNavigator(S.navRoute);
   drawRoute(S.navRoute);
-  Voice.say("Rerouting.", true);
+  S.reroutes = (S.reroutes || 0) + 1;
+  if (Date.now() - (S.lastRerouteSpoken || 0) > 30000) { S.lastRerouteSpoken = Date.now(); Voice.say("Rerouting.", true); }
+  toast(`New route: ${Fmt.time(S.navRoute.time)} · ${Fmt.dist(S.navRoute.total)}`);
   S.nav.update(fix);
 }
 
@@ -704,6 +801,7 @@ function wire() {
   $("grip").addEventListener("click", () => $("sheet").classList.toggle("expanded"));
   document.querySelector(".list-head").addEventListener("click", () => $("sheet").classList.toggle("expanded"));
   $("btn-close-station").onclick = closeStation;
+  $("st-alts").addEventListener("click", (e) => { const b = e.target.closest("button[data-i]"); if (b) chooseRoute(+b.dataset.i); });
   $("btn-go").onclick = () => startNav(false);
   $("btn-sim").onclick = () => startNav(true);
   $("btn-end").onclick = endNav;

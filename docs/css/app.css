@@ -105,6 +105,13 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .st-name { font-size: 21px; font-weight: 750; }
 .st-route { margin-top: 10px; font-size: 17px; }
 .st-route b { color: var(--brand); font-size: 22px; }
+.st-route .via { font-size: 14px; color: var(--muted); margin-top: 2px; }
+.alts { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.alt { flex: 1 0 30%; min-width: 0; text-align: left; padding: 8px 10px; border-radius: 12px; background: var(--bg2); border: 2px solid transparent; display: flex; flex-direction: column; gap: 1px; }
+.alt.sel { border-color: var(--brand); }
+.alt b { font-size: 16px; }
+.alt span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alt em { font-style: normal; font-size: 11px; font-weight: 700; color: var(--brand); }
 .st-meta { margin-top: 6px; font-size: 14px; color: var(--muted); white-space: pre-line; }
 .steps-wrap { margin-top: 12px; overflow-y: auto; min-height: 0; }
 .steps-wrap summary { color: var(--muted); font-size: 14px; padding: 6px 0; }

@@ -188,11 +188,21 @@ class Navigator {
     this.arrived = false;
   }
 
-  // Project a fix onto the route near where we were last time.
-  _project(lat, lon) {
+  // index of the route segment that contains distance s
+  _segAt(s) {
+    const cum = this.route.cum;
+    let lo = 0, hi = cum.length - 2;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (cum[mid] <= s) lo = mid; else hi = mid - 1; }
+    return Math.max(0, lo);
+  }
+
+  // Project a fix onto the route near where we were last time (or anywhere on it, if `whole`).
+  _project(lat, lon, whole = false) {
     const { coords, cum } = this.route;
-    let best = { d: Infinity };
-    const from = Math.max(0, this.seg - 3), to = Math.min(coords.length - 2, this.seg + 60);
+    let best = { d: Infinity, dist: Infinity };
+    const from = whole ? 0 : this._segAt(this.along - 300);
+    const to = whole ? coords.length - 2 : Math.min(coords.length - 2, this._segAt(this.along + 1500) + 1);
+    const jump = 200 + (this.speed || 10) * 3; // further ahead than we could have driven since the last fix
     for (let i = from; i <= to; i++) {
       const ax = (coords[i][0] - lon) * Geo.KX, ay = (coords[i][1] - lat) * Geo.KY;
       const bx = (coords[i + 1][0] - lon) * Geo.KX, by = (coords[i + 1][1] - lat) * Geo.KY;
@@ -201,8 +211,8 @@ class Navigator {
       t = t < 0 ? 0 : t > 1 ? 1 : t;
       const d = Math.hypot(ax + t * dx, ay + t * dy);
       const along = cum[i] + t * (cum[i + 1] - cum[i]);
-      // small bias against jumping backwards along the route
-      const score = d + (along < this.along - 20 ? 25 : 0);
+      // where the route passes near itself, prefer the part we are actually on: no jumping back, no leaping ahead
+      const score = d + (along < this.along - 20 ? 25 : 0) + (!whole && along > this.along + jump ? 40 : 0);
       if (score < best.d) best = { d: score, dist: d, i, t, along };
     }
     return best;
@@ -211,15 +221,22 @@ class Navigator {
   update(fix) {
     if (this.arrived) return;
     const r = this.route;
-    const p = this._project(fix.lat, fix.lon);
+    if (fix.speed != null && fix.speed >= 0) this.speed = fix.speed;
     const tol = Math.max(35, Math.min(fix.accuracy || 0, 60) * 1.2);
+    let p = this._project(fix.lat, fix.lon);
+    if (p.dist > tol) {
+      // before calling it off-route, check whether we're on another part of the route
+      const q = this._project(fix.lat, fix.lon, true);
+      if (q.dist <= tol) p = q;
+    }
     if (p.dist > tol) {
       this.offCount++;
       if (this.offCount >= 2) { this.offCount = 0; this.onOffRoute(fix); return; }
     } else {
       this.offCount = 0;
       this.seg = p.i;
-      this.along = Math.max(this.along - 5, p.along);
+      // ignore small backward GPS jitter, but accept a real correction
+      this.along = p.along >= this.along - 30 ? Math.max(this.along - 5, p.along) : p.along;
     }
     const remaining = Math.max(0, r.total - this.along);
     const toStation = Geo.dist(fix.lat, fix.lon, r.station.lat, r.station.lon);

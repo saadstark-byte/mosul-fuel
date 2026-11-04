@@ -24,12 +24,48 @@ ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "data"
 OUT = ROOT / "docs" / "data"
 
-SPEED = {  # km/h, deliberately conservative for city traffic
+SPEED = {  # km/h inside Mosul, towns and villages: deliberately conservative for traffic
     "motorway": 90, "motorway_link": 45, "trunk": 70, "trunk_link": 40,
     "primary": 50, "primary_link": 35, "secondary": 40, "secondary_link": 30,
     "tertiary": 35, "tertiary_link": 25, "unclassified": 30, "road": 25,
     "residential": 22, "living_street": 10, "service": 12,
 }
+SPEED_RURAL = {  # km/h on open roads between towns
+    "motorway": 100, "motorway_link": 50, "trunk": 85, "trunk_link": 45,
+    "primary": 75, "primary_link": 40, "secondary": 65, "secondary_link": 35,
+    "tertiary": 55, "tertiary_link": 30, "unclassified": 45, "road": 35,
+    "residential": 30, "living_street": 10, "service": 15,
+}
+MOSUL_BOX = (36.26, 36.44, 43.02, 43.24)  # south, north, west, east
+BUILT_UP_RADIUS = {"town": 1500, "suburb": 900, "village": 700, "neighbourhood": 500, "quarter": 500, "hamlet": 300}
+
+
+class BuiltUp:
+    """Tells whether a point is in Mosul or inside a town/village (slower speeds there)."""
+
+    def __init__(self):
+        self.cells = {}
+        src = RAW / "places.json"
+        if not src.exists():
+            return
+        for e in json.load(open(src, encoding="utf-8"))["elements"]:
+            r = BUILT_UP_RADIUS.get(e.get("tags", {}).get("place"))
+            lat = e.get("lat", e.get("center", {}).get("lat"))
+            lon = e.get("lon", e.get("center", {}).get("lon"))
+            if r and lat is not None:
+                self.cells.setdefault((int(lat / 0.02), int(lon / 0.02)), []).append((lat, lon, r))
+
+    def __call__(self, lat, lon):
+        s, n, w, e = MOSUL_BOX
+        if s <= lat <= n and w <= lon <= e:
+            return True
+        cy, cx = int(lat / 0.02), int(lon / 0.02)
+        for y in (cy - 1, cy, cy + 1):
+            for x in (cx - 1, cx, cx + 1):
+                for plat, plon, r in self.cells.get((y, x), ()):
+                    if haversine(lat, lon, plat, plon) < r:
+                        return True
+        return False
 CLASS_RANK = {k: i for i, k in enumerate([
     "motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "road",
     "residential", "living_street", "service", "motorway_link", "trunk_link",
@@ -61,6 +97,7 @@ def build_graph():
     coords = {}
     way_attrs, way_index = [], {}
     raw_edges = []  # (a_osm, b_osm, way_attr_idx)
+    built_up = BuiltUp()
 
     for w in ways:
         t = w.get("tags", {})
@@ -83,17 +120,19 @@ def build_graph():
         else:
             fwd = bwd = True
 
-        speed = SPEED[hw]
         ms = parse_speed(t.get("maxspeed"))
-        if ms:
-            speed = min(speed * 1.2, ms * 0.85)
         name = t.get("name", "")
         name_en = t.get("name:en", "")
-        attr = (name, name_en, t.get("ref", ""), CLASS_RANK[hw], round(speed, 1), 1 if roundabout else 0)
-        if attr not in way_index:
-            way_index[attr] = len(way_attrs)
-            way_attrs.append(attr)
-        ai = way_index[attr]
+
+        def attr_index(built_up):
+            speed = (SPEED if built_up else SPEED_RURAL)[hw]
+            if ms:
+                speed = min(speed * 1.2, ms * 0.85)
+            attr = (name, name_en, t.get("ref", ""), CLASS_RANK[hw], round(speed, 1), 1 if roundabout else 0)
+            if attr not in way_index:
+                way_index[attr] = len(way_attrs)
+                way_attrs.append(attr)
+            return way_index[attr]
 
         nodes, geom = w["nodes"], w["geometry"]
         for nid, g in zip(nodes, geom):
@@ -102,6 +141,8 @@ def build_graph():
         for a, b in zip(nodes, nodes[1:]):
             if a not in coords or b not in coords or a == b:
                 continue
+            (la, lo), (lb, lob) = coords[a], coords[b]
+            ai = attr_index(built_up((la + lb) / 2, (lo + lob) / 2))
             if fwd:
                 raw_edges.append((a, b, ai))
             if bwd:

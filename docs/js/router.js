@@ -177,7 +177,7 @@ class RoadGraph {
       let c = frac * time[e];
       if (headingDeg != null) {
         const br = Geo.bearing(this.lat[from], this.lon[from], this.lat[to], this.lon[to]);
-        if (Math.abs(Geo.turn(headingDeg, br)) > 110) c += 60; // discourage U-turns while driving
+        if (Math.abs(Geo.turn(headingDeg, br)) > 110) c += 150; // keep going the way the driver is heading; no forced U-turns
       }
       if (c < dist[to]) {
         dist[to] = c; meters[to] = frac * len[e]; prev[to] = -2 - from; // negative = start edge
@@ -186,16 +186,36 @@ class RoadGraph {
     };
     seed(start.a, start.b, 1 - start.t);
     seed(start.b, start.a, start.t);
+    // U-turns cost extra time, so routes only use them when they really pay off.
+    const UTURN = 90; // seconds
+    const lat = this.lat, lon = this.lon, KX = Geo.KX, KY = Geo.KY;
+    const pred = (x) => { const q = prev[x]; return q >= 0 ? q : q <= -2 ? -2 - q : -1; };
     while (heap.size) {
       const u = heap.pop();
       if (done[u]) continue;
       done[u] = 1;
       if (u === goal) break;
       const du = dist[u];
+      // direction we arrived at u from; look past short links (median crossovers on divided roads)
+      let ix = 0, iy = 0;
+      const p = pred(u);
+      if (p >= 0) {
+        ix = (lon[u] - lon[p]) * KX; iy = (lat[u] - lat[p]) * KY;
+        if (ix * ix + iy * iy < 1600) {
+          const pp = pred(p);
+          if (pp >= 0 && pp !== u) { ix = (lon[p] - lon[pp]) * KX; iy = (lat[p] - lat[pp]) * KY; }
+        }
+      }
+      const in2 = ix * ix + iy * iy;
       for (let e = first[u], end = first[u + 1]; e < end; e++) {
         const v = target[e];
         if (done[v]) continue;
-        const nd = du + time[e];
+        let nd = du + time[e];
+        if (in2 > 0) {
+          const ox = (lon[v] - lon[u]) * KX, oy = (lat[v] - lat[u]) * KY;
+          const dot = ix * ox + iy * oy;
+          if (dot < 0 && dot * dot > 0.72 * in2 * (ox * ox + oy * oy)) nd += UTURN; // turn sharper than ~150°
+        }
         if (nd < dist[v]) {
           dist[v] = nd; meters[v] = meters[u] + len[e]; prev[v] = u;
           heap.push(nd + h(v), v);
@@ -224,6 +244,49 @@ class RoadGraph {
     }
     nodes.reverse();
     return { nodes, firstFrom, time: this.dist[goal], meters: this.meters[goal] };
+  }
+
+  edgesOf(p) {
+    const es = [];
+    for (let i = 1; i < p.nodes.length; i++) { const e = this.edge(p.nodes[i - 1], p.nodes[i]); if (e >= 0) es.push(e); }
+    return es;
+  }
+
+  // Up to `max` clearly different routes, fastest first. Each round makes the roads already
+  // used a bit "slower" and searches again, so the next route has to go a different way.
+  alternatives(start, goal, max = 3) {
+    const best = this.path(start, goal);
+    if (!best) return [];
+    best.edges = this.edgesOf(best);
+    const out = [best];
+    const saved = this.time.slice();
+    const hits = new Uint8Array(this.m);
+    const mark = (es) => { for (const e of es) if (hits[e] < 255) hits[e]++; };
+    mark(best.edges);
+    try {
+      for (let k = 0; k < 5 && out.length < max; k++) {
+        for (let e = 0; e < this.m; e++) this.time[e] = hits[e] ? saved[e] * (1 + 0.8 * hits[e]) : saved[e];
+        const p = this.path(start, goal);
+        if (!p) break;
+        p.edges = this.edgesOf(p);
+        let pen = 0, real = 0;
+        for (const e of p.edges) { pen += this.time[e]; real += saved[e]; }
+        p.time = p.time - pen + real; // back to real driving time
+        mark(p.edges);
+        if (p.time > best.time * 1.4) continue; // much slower: not worth offering
+        const shared = Math.max(...out.map((r) => {
+          const s = new Set(r.edges);
+          let m = 0;
+          for (const e of p.edges) if (s.has(e)) m += this.len[e];
+          return m / Math.max(1, p.meters);
+        }));
+        if (shared > 0.75) continue; // basically the same road
+        out.push(p);
+      }
+    } finally {
+      this.time.set(saved);
+    }
+    return out;
   }
 
   wayLabel(wi) {
