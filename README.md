@@ -26,7 +26,7 @@ The Home Screen app keeps its own copy, separate from Safari. That's why step 3 
 |---|---|---|
 | Map | `docs/data/basemap.pmtiles` (7.8 MB vector tiles) | OpenStreetMap via Protomaps |
 | Roads for routing | `docs/data/graph.bin` (175k road points) | OpenStreetMap via Overpass |
-| Gas stations | `docs/data/stations.json` (80) | OpenStreetMap `amenity=fuel`, kept by `tools/filter_stations.js`: Mosul city plus within 1.5 km of the Bozan–Tel Kaif–Mosul road |
+| Gas stations | `docs/data/stations.json` (81) | OpenStreetMap `amenity=fuel`, kept by `tools/filter_stations.js`: Mosul city, within 1.5 km of the Bozan–Tel Kaif–Mosul road, plus Alqosh |
 | Place names for search | `docs/data/places.json` (581) | OpenStreetMap `place=*` |
 | Routing | `docs/js/router.js` (Dijkstra / A* on the phone) | — |
 | Directions | `docs/js/nav.js` | — |

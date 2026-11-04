@@ -11,6 +11,9 @@ const ROUTE_FROM = [36.73452, 43.12915]; // Bozan
 const ROUTE_TO = [36.345, 43.13];        // central Mosul
 const CORRIDOR_M = 1500;                 // how far from that road a station may be
 const NOT_FOR_CARS = /معمل|غاز المنزلي/;  // LPG bottling plants / household gas shops
+const ALSO_KEEP = new Set([
+  "osm-n8956425717", // Alqosh (محطة تعبئة القوش): nearest station to Bozan, 2 km off the road
+]);
 
 const ctx = { console, Math, Date, performance, window: {}, setTimeout };
 vm.createContext(ctx);
@@ -31,6 +34,6 @@ const inMosul = (s) => s.lat >= MOSUL_BOX.south && s.lat <= MOSUL_BOX.north && s
 
 const file = path.join(DOCS, "data/stations.json");
 const all = JSON.parse(fs.readFileSync(file, "utf8"));
-const keep = all.filter((s) => (inMosul(s) || nearRoad(s)) && !NOT_FOR_CARS.test(s.name || ""));
+const keep = all.filter((s) => ALSO_KEEP.has(s.id) || ((inMosul(s) || nearRoad(s)) && !NOT_FOR_CARS.test(s.name || "")));
 fs.writeFileSync(file, JSON.stringify(keep));
 console.log(`stations: kept ${keep.length} of ${all.length} (Mosul + Bozan–Tel Kaif–Mosul road); route ${(route.meters / 1000).toFixed(1)} km`);
