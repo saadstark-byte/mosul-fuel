@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Mosul Fuel</title>
+  <meta name="description" content="Offline map of gas stations from Mosul to Tel Kaif, with turn-by-turn routes.">
+  <meta name="theme-color" content="#0f5132">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mosul Fuel">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="map" aria-label="Map"></div>
+
+  <!-- top bar -->
+  <div id="topbar">
+    <button id="status" class="pill" type="button" aria-live="polite"><span class="dot"></span><span id="status-text">Starting…</span></button>
+    <button id="btn-settings" class="round" type="button" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.5 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+    </button>
+  </div>
+
+  <div id="hint" class="hint" hidden></div>
+
+  <!-- navigation banner -->
+  <div id="nav-top" hidden>
+    <div class="nav-main">
+      <div id="nav-icon" class="nav-icon"></div>
+      <div class="nav-text">
+        <div id="nav-dist" class="nav-dist"></div>
+        <div id="nav-instr" class="nav-instr" dir="auto"></div>
+      </div>
+    </div>
+    <div id="nav-then" class="nav-then" hidden></div>
+  </div>
+
+  <!-- floating buttons -->
+  <div id="fabs">
+    <button id="btn-recenter" class="fab wide" type="button" hidden>
+      <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2 4.5 20.3l.7.7L12 18l6.8 3 .7-.7z"/></svg>
+      Re-center
+    </button>
+    <button id="btn-locate" class="fab" type="button" aria-label="Show my location">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm8.9 3A9 9 0 0 0 13 3.1V1h-2v2.1A9 9 0 0 0 3.1 11H1v2h2.1a9 9 0 0 0 7.9 7.9V23h2v-2.1a9 9 0 0 0 7.9-7.9H23v-2zM12 19a7 7 0 1 1 0-14 7 7 0 0 1 0 14z"/></svg>
+    </button>
+  </div>
+
+  <!-- bottom sheet -->
+  <section id="sheet" class="sheet">
+    <div class="grip" id="grip"></div>
+
+    <div id="view-home">
+      <button id="btn-nearest" class="primary big" type="button">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19.8 7.6 16.2 4l-1.1 1.1 2 2a2.4 2.4 0 0 0 .7 4.3V18a1 1 0 0 1-2 0v-4.5a2 2 0 0 0-2-2H13V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v16h10v-8h1.3v4.5a3 3 0 0 0 6 0V9a2 2 0 0 0-.5-1.4zM11 10H5V5h6zm7.5 1a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
+        <span>Nearest gas station</span>
+      </button>
+      <div class="list-head">
+        <span id="list-title">Gas stations</span>
+        <span id="list-sub" class="muted"></span>
+      </div>
+      <ul id="list" class="list"></ul>
+    </div>
+
+    <div id="view-station" hidden>
+      <div class="st-head">
+        <div class="st-titles">
+          <div id="st-name" class="st-name" dir="auto"></div>
+          <div id="st-name2" class="muted" dir="auto"></div>
+        </div>
+        <button id="btn-close-station" class="round small" type="button" aria-label="Close">✕</button>
+      </div>
+      <div id="st-route" class="st-route"></div>
+      <div id="st-meta" class="st-meta"></div>
+      <div class="row">
+        <button id="btn-go" class="primary" type="button">Start</button>
+        <button id="btn-sim" class="secondary" type="button">Preview drive</button>
+      </div>
+      <div id="st-user-actions" class="row" hidden>
+        <button id="btn-edit-station" class="secondary" type="button">Edit</button>
+        <button id="btn-delete-station" class="danger" type="button">Delete</button>
+      </div>
+      <details id="st-steps-wrap" class="steps-wrap">
+        <summary>Turn-by-turn list</summary>
+        <ol id="st-steps" class="steps"></ol>
+      </details>
+    </div>
+
+    <div id="view-nav" hidden>
+      <div class="nav-bottom">
+        <div class="nav-stats">
+          <div><b id="nav-eta-min"></b><span class="muted">time</span></div>
+          <div><b id="nav-remaining"></b><span class="muted">distance</span></div>
+          <div><b id="nav-arrive"></b><span class="muted">arrive</span></div>
+        </div>
+        <button id="btn-voice" class="round" type="button" aria-label="Voice on/off"></button>
+        <button id="btn-end" class="danger" type="button">End</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- long-press menu -->
+  <div id="menu" class="menu" hidden>
+    <button type="button" data-act="add">⛽ Add gas station here</button>
+    <button type="button" data-act="here">📍 Set my location here</button>
+    <button type="button" data-act="cancel" class="muted">Cancel</button>
+  </div>
+
+  <!-- add / edit station -->
+  <dialog id="dlg-station">
+    <form method="dialog" id="form-station">
+      <h2 id="dlg-title">Add gas station</h2>
+      <label>Name<input id="f-name" name="name" dir="auto" autocomplete="off" placeholder="e.g. محطة الحامد"></label>
+      <label>Note<textarea id="f-note" name="note" dir="auto" rows="3" placeholder="Opening hours, fuel types, prices…"></textarea></label>
+      <div class="row">
+        <button value="cancel" class="secondary" type="submit">Cancel</button>
+        <button value="save" class="primary" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- settings -->
+  <dialog id="dlg-settings">
+    <form method="dialog">
+      <h2>Mosul Fuel</h2>
+      <label class="toggle"><input type="checkbox" id="set-voice"> Voice directions</label>
+      <div class="box">
+        <div id="set-offline"></div>
+        <button type="button" id="btn-update" class="secondary">Check for updates</button>
+      </div>
+      <div class="box">
+        <div><b>Your stations</b> <span id="set-user-count" class="muted"></span></div>
+        <p class="muted small">Long-press the map to add a station. Back them up before deleting the app.</p>
+        <div class="row">
+          <button type="button" id="btn-export" class="secondary">Copy backup</button>
+          <button type="button" id="btn-import" class="secondary">Restore</button>
+        </div>
+      </div>
+      <div class="box small">
+        <b>Install on iPhone</b>
+        <ol>
+          <li>Open this page in <b>Safari</b> with internet.</li>
+          <li>Tap Share, then <b>Add to Home Screen</b>.</li>
+          <li>Open <b>Mosul Fuel</b> from the Home Screen and wait for “Offline ready”.</li>
+          <li>Test it in Airplane Mode before the trip.</li>
+        </ol>
+      </div>
+      <p class="muted small">Map data © OpenStreetMap contributors (ODbL). Basemap by Protomaps. Map data date: <span id="set-date"></span>. Routes are estimates; always follow road signs.</p>
+      <div class="row"><button value="close" class="primary" type="submit">Done</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="vendor/maplibre-gl.js"></script>
+  <script src="vendor/pmtiles.js"></script>
+  <script src="js/router.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/offline.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
