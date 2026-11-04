@@ -1,6 +1,6 @@
 # Mosul Fuel
 
-An offline map of every gas station between Mosul, Tel Kaif and Bozan, with driving routes and spoken turn-by-turn directions. It runs as a web app saved to the iPhone Home Screen, so it needs no App Store, no Apple developer account, and no internet once it's installed.
+An offline map of the gas stations in Mosul and along the road from Bozan through Tel Kaif to Mosul, with search, driving routes and spoken turn-by-turn directions. It runs as a web app saved to the iPhone Home Screen, so it needs no App Store, no Apple developer account, and no internet once it's installed.
 
 ## Install on iPhone
 
@@ -13,6 +13,7 @@ The Home Screen app keeps its own copy, separate from Safari. That's why step 3 
 
 ## Using it
 
+- **Search**: find a station or a place (neighbourhood, village) in Arabic or English. Pick a place to see the stations closest to it.
 - **Nearest gas station**: picks the station with the shortest drive time.
 - **List**: every station, sorted by drive time from where you are.
 - **Start**: turn-by-turn directions with voice. It reroutes by itself if you miss a turn. Keep the app open and the screen on while driving.
@@ -25,7 +26,8 @@ The Home Screen app keeps its own copy, separate from Safari. That's why step 3 
 |---|---|---|
 | Map | `docs/data/basemap.pmtiles` (7.8 MB vector tiles) | OpenStreetMap via Protomaps |
 | Roads for routing | `docs/data/graph.bin` (175k road points) | OpenStreetMap via Overpass |
-| Gas stations | `docs/data/stations.json` (149) | OpenStreetMap `amenity=fuel` |
+| Gas stations | `docs/data/stations.json` (80) | OpenStreetMap `amenity=fuel`, kept by `tools/filter_stations.js`: Mosul city plus within 1.5 km of the Bozan–Tel Kaif–Mosul road |
+| Place names for search | `docs/data/places.json` (581) | OpenStreetMap `place=*` |
 | Routing | `docs/js/router.js` (Dijkstra / A* on the phone) | — |
 | Directions | `docs/js/nav.js` | — |
 | Offline saving | `docs/sw.js`, `docs/js/offline.js` | — |

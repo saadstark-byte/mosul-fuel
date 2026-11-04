@@ -231,6 +231,41 @@ def build_stations():
     print(f"stations {len(out)}")
 
 
+PLACE_RANK = {"city": 0, "town": 1, "suburb": 2, "village": 3, "neighbourhood": 4, "quarter": 4,
+              "hamlet": 5, "locality": 6, "isolated_dwelling": 7}
+
+
+def build_places():
+    """Place names for the search box: [name, nameEn, otherNames, lat, lon, type]."""
+    src = RAW / "places.json"
+    if not src.exists():
+        print("places: data/places.json missing, search will only find stations")
+        return
+    out, seen = [], set()
+    for e in json.load(open(src, encoding="utf-8"))["elements"]:
+        t = e.get("tags", {})
+        lat = e.get("lat", e.get("center", {}).get("lat"))
+        lon = e.get("lon", e.get("center", {}).get("lon"))
+        name = t.get("name", "")
+        if lat is None or not name:
+            continue
+        key = (name, round(lat, 2), round(lon, 2))
+        if key in seen:
+            continue
+        seen.add(key)
+        others = []
+        for k in ("name:ar", "name:ku", "name:ckb", "name:syc", "alt_name", "old_name", "name:en"):
+            for v in t.get(k, "").split(";"):
+                v = v.strip()
+                if v and v != name and v not in others:
+                    others.append(v)
+        out.append([name, t.get("name:en", ""), " / ".join(others), round(lat, 5), round(lon, 5), t.get("place", "")])
+    out.sort(key=lambda p: PLACE_RANK.get(p[5], 9))
+    with open(OUT / "places.json", "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"places {len(out)}")
+
+
 def write_info():
     import datetime
     stamp = datetime.datetime.fromtimestamp((RAW / "roads.json").stat().st_mtime)
@@ -241,4 +276,5 @@ def write_info():
 if __name__ == "__main__":
     build_graph()
     build_stations()
+    build_places()
     write_info()

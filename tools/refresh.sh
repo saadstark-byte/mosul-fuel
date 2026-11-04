@@ -28,6 +28,8 @@ echo "Downloading gas stations…"
 overpass "[out:json][timeout:180];nwr[\"amenity\"=\"fuel\"]($BBOX_OVERPASS);out center tags;" data/fuel.json
 echo "Downloading roads…"
 overpass "[out:json][timeout:360];way[\"highway\"~\"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|road)$\"]($BBOX_OVERPASS);out body geom;" data/roads.json
+echo "Downloading place names (for search)…"
+overpass "[out:json][timeout:120];nwr[\"place\"~\"^(city|town|village|hamlet|suburb|neighbourhood|quarter|isolated_dwelling|locality)$\"][\"name\"]($BBOX_OVERPASS);out center tags;" data/places.json
 
 echo "Downloading map tiles…"
 BUILD=$(curl -sf https://build-metadata.protomaps.dev/builds.json | python3 -c "import sys,json;print(json.load(sys.stdin)[-1]['key'])")
@@ -42,6 +44,7 @@ fi
 [ -d tools/node_modules ] || (cd tools && npm install)
 
 python3 -I tools/build_data.py
+node tools/filter_stations.js
 node tools/build_assets.js
 node tools/build_manifest.js
 echo "Done. Commit and push docs/ to update the app; phones pick it up next time they open it online."

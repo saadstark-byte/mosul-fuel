@@ -76,6 +76,14 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .big { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 15px; font-size: 17px; flex: none; }
 .row { display: flex; gap: 10px; margin-top: 12px; }
 
+.search { display: flex; align-items: center; gap: 8px; background: var(--bg2); border-radius: 12px; padding: 0 6px 0 12px; margin-bottom: 10px; flex: none; color: var(--muted); }
+.search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 16px; padding: 12px 0; outline: none; -webkit-appearance: none; appearance: none; }
+.search input::-webkit-search-cancel-button { display: none; }
+.search button { width: 34px; height: 34px; border-radius: 50%; color: var(--muted); }
+.sheet.searching { max-height: none; top: calc(var(--safe-top) + 12px); }
+.sheet.searching #btn-nearest { display: none; }
+.list .ico.place { background: #1c7ed6; }
+.list .empty { justify-content: center; color: var(--muted); cursor: default; padding: 22px 4px; text-align: center; }
 .list-head { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 2px 6px; font-weight: 700; }
 .list-head .muted { font-weight: 400; font-size: 13px; }
 .list { list-style: none; margin: 0; padding: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; }

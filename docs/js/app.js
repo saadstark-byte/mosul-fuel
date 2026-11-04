@@ -8,7 +8,7 @@ const LS_VOICE = "mfuel.voice";
 
 const S = {
   map: null, graph: null, swOk: false,
-  stations: [], fonts: {},
+  stations: [], places: [], fonts: {}, placeMarker: null,
   me: null, gps: null, costs: null, rankedAt: null,
   selected: null, preview: null, previewAt: null,
   nav: null, navRoute: null, follow: true, sim: null, lastReroute: 0, lastFix: null,
@@ -230,11 +230,13 @@ function closeMenu() { $("menu").hidden = true; }
 
 /* ---------- graph & stations ---------- */
 async function loadData() {
-  const [stations, ways, buf] = await Promise.all([
+  const [stations, ways, buf, places] = await Promise.all([
     fetch("data/stations.json").then((r) => r.json()),
     fetch("data/graph-ways.json").then((r) => r.json()),
     fetch("data/graph.bin").then((r) => r.arrayBuffer()),
+    fetch("data/places.json").then((r) => (r.ok ? r.json() : [])).catch(() => []),
   ]);
+  S.places = places;
   S.stations = stations.concat(loadUserStations().map((s) => ({ ...s, user: true })));
   refreshStationsLayer();
   renderList();
@@ -274,20 +276,91 @@ function maybeRank() {
   }
 }
 
+/* ---------- search ---------- */
+// Loose matching for Arabic, Kurdish and English: ignores diacritics, hamza forms, ة/ه, ى/ي, case and punctuation.
+function norm(s) {
+  return String(s || "").toLowerCase().normalize("NFKD")
+    .replace(/[̀-ًͯ-ٰٟـ]/g, "")
+    .replace(/[أإآٱ]/g, "ا").replace(/ة/g, "ه").replace(/[ىیې]/g, "ي").replace(/ک/g, "ك").replace(/ە/g, "ه")
+    .replace(/ؤ/g, "و").replace(/ئ/g, "ي").replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)])
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+function matcher(q) {
+  const words = norm(q).split(" ").filter(Boolean);
+  return (text) => { const t = norm(text); return words.every((w) => t.includes(w)); };
+}
+const PLACE_TYPE = { city: "City", town: "Town", village: "Village", hamlet: "Village", suburb: "Area", neighbourhood: "Neighbourhood", quarter: "Neighbourhood", locality: "Place", isolated_dwelling: "Place" };
+const PIN_SVG = '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>';
+
+function goToPlace(i) {
+  const p = S.places[i];
+  if (!p) return;
+  const [name, nameEn, , lat, lon] = p;
+  endSearchMode();
+  // list the stations closest to this place, and show the place with its nearest stations on the map
+  S.near = { name: nameEn && nameEn !== name ? `${nameEn} · ${name}` : name, lat, lon };
+  $("search").value = "";
+  $("search-clear").hidden = false;
+  S.placeMarker?.remove();
+  S.placeMarker = new maplibregl.Marker({ color: "#1c7ed6" }).setLngLat([lon, lat]).addTo(S.map);
+  const b = new maplibregl.LngLatBounds([lon, lat], [lon, lat]);
+  S.stations.map((s) => [Geo.dist(lat, lon, s.lat, s.lon), s]).sort((x, y) => x[0] - y[0]).slice(0, 3).forEach(([, s]) => b.extend([s.lon, s.lat]));
+  renderList();
+  S.map.fitBounds(b, { padding: { top: 90, bottom: $("sheet").offsetHeight + 40, left: 50, right: 50 }, maxZoom: 15, duration: 900 });
+}
+function endSearchMode() {
+  $("search").blur();
+  $("sheet").classList.remove("searching", "expanded");
+}
+
 function renderList() {
-  const rows = S.stations.map((s) => ({
+  const q = $("search").value.trim();
+  const match = q ? matcher(q) : null;
+  let stations = S.stations;
+  if (match) stations = stations.filter((s) => match([s.name, s.nameEn, s.nameAr, s.brand, s.operator, s.street, s.note].join(" ")));
+  const rows = stations.map((s) => ({
     s, c: S.costs?.get(s.id) || null,
     d: S.me ? Geo.dist(S.me.lat, S.me.lon, s.lat, s.lon) : null,
   }));
-  if (S.costs) rows.sort((a, b) => (a.c ? a.c.time : 1e9 + a.d) - (b.c ? b.c.time : 1e9 + b.d));
+  const near = !match && S.near;
+  if (near) {
+    rows.forEach((r) => { r.dn = Geo.dist(near.lat, near.lon, r.s.lat, r.s.lon); });
+    rows.sort((a, b) => a.dn - b.dn);
+  } else if (S.costs) rows.sort((a, b) => (a.c ? a.c.time : 1e9 + a.d) - (b.c ? b.c.time : 1e9 + b.d));
   else if (S.me) rows.sort((a, b) => a.d - b.d);
   else rows.sort((a, b) => stationTitle(a.s).localeCompare(stationTitle(b.s), "ar"));
 
-  $("list-title").textContent = `Gas stations (${S.stations.length})`;
-  $("list-sub").textContent = S.costs ? "by road from you" : S.me ? (S.graph ? "straight line · you're away from the roads" : "straight line") : "waiting for location…";
-  $("list").innerHTML = rows.map(({ s, c, d }) => {
+  let placeRows = "";
+  let nPlaces = 0;
+  if (match) {
+    const found = [];
+    S.places.forEach((p, i) => { if (match(p[0] + " " + p[1] + " " + p[2])) found.push(i); });
+    nPlaces = found.length;
+    if (S.me) found.sort((a, b) => Geo.dist(S.me.lat, S.me.lon, S.places[a][3], S.places[a][4]) - Geo.dist(S.me.lat, S.me.lon, S.places[b][3], S.places[b][4]));
+    placeRows = found.slice(0, 6).map((i) => {
+      const [name, nameEn, , lat, lon, type] = S.places[i];
+      const d = S.me ? `<b>${Fmt.dist(Geo.dist(S.me.lat, S.me.lon, lat, lon))}</b><span>straight</span>` : "";
+      return `<li data-place="${i}"><div class="ico place">${PIN_SVG}</div>
+        <div class="names"><div class="n1" dir="auto">${esc(nameEn && nameEn !== name ? nameEn : name)}</div><div class="n2" dir="auto">${esc(PLACE_TYPE[type] || "Place")}${nameEn && nameEn !== name ? " · " + esc(name) : ""}</div></div>
+        <div class="d">${d}</div></li>`;
+    }).join("");
+  }
+
+  if (match) {
+    $("list-title").textContent = `${rows.length} station${rows.length === 1 ? "" : "s"}${nPlaces ? ` · ${Math.min(nPlaces, 6)} place${nPlaces === 1 ? "" : "s"}` : ""}`;
+    $("list-sub").textContent = `for “${q}”`;
+  } else if (near) {
+    $("list-title").textContent = `Near ${near.name}`;
+    $("list-sub").textContent = "distance from there";
+  } else {
+    $("list-title").textContent = `Gas stations (${S.stations.length})`;
+    $("list-sub").textContent = S.costs ? "by road from you" : S.me ? (S.graph ? "straight line · you're away from the roads" : "straight line") : "waiting for location…";
+  }
+  const empty = match && !rows.length && !placeRows ? `<li class="empty">Nothing found. Try the Arabic or English spelling.</li>` : "";
+  $("list").innerHTML = placeRows + empty + rows.map(({ s, c, d, dn }) => {
     const second = s.nameEn && s.nameEn !== s.name ? s.nameEn : s.user ? (s.note || "Added by you") : (s.street || s.brand || s.nameAr || "");
-    const dist = c ? `<b>${Fmt.time(c.time)}</b><span>${Fmt.dist(c.meters)}</span>`
+    const dist = dn != null ? `<b>${Fmt.dist(dn)}</b><span>from there</span>`
+      : c ? `<b>${Fmt.time(c.time)}</b><span>${Fmt.dist(c.meters)}</span>`
       : d != null ? `<b>${Fmt.dist(d)}</b><span>straight</span>` : "";
     return `<li data-id="${esc(s.id)}"><div class="ico ${s.user ? "user" : ""}">${PUMP_SVG}</div>
       <div class="names"><div class="n1" dir="auto">${esc(stationTitle(s))}</div><div class="n2" dir="auto">${esc(second)}</div></div>
@@ -602,7 +675,32 @@ async function runSync(manual) {
 
 /* ---------- wiring ---------- */
 function wire() {
-  $("list").addEventListener("click", (e) => { const li = e.target.closest("li[data-id]"); if (li) selectStation(li.dataset.id); });
+  $("list").addEventListener("click", (e) => {
+    const li = e.target.closest("li[data-id], li[data-place]");
+    if (!li) return;
+    if (li.dataset.place != null) return goToPlace(+li.dataset.place);
+    endSearchMode();
+    selectStation(li.dataset.id);
+  });
+  const search = $("search");
+  search.addEventListener("focus", () => $("sheet").classList.add("searching"));
+  search.addEventListener("input", () => {
+    S.near = null;
+    $("search-clear").hidden = !search.value;
+    $("sheet").classList.add("searching");
+    $("list").scrollTop = 0;
+    renderList();
+  });
+  search.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); search.blur(); } });
+  search.addEventListener("blur", () => { if (!search.value) $("sheet").classList.remove("searching"); });
+  $("search-clear").onclick = () => {
+    search.value = "";
+    S.near = null;
+    $("search-clear").hidden = true;
+    S.placeMarker?.remove(); S.placeMarker = null;
+    endSearchMode();
+    renderList();
+  };
   $("grip").addEventListener("click", () => $("sheet").classList.toggle("expanded"));
   document.querySelector(".list-head").addEventListener("click", () => $("sheet").classList.toggle("expanded"));
   $("btn-close-station").onclick = closeStation;
