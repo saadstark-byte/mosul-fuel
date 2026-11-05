@@ -110,17 +110,30 @@ function arrowSvg(mod, exit) {
 
 /* ---------- map ---------- */
 function fuelIcon(color) {
-  const s = 56, c = document.createElement("canvas");
-  c.width = c.height = s;
+  // Teardrop map pin (56×68 px @2x): tip at bottom centre, soft drop shadow, white rim, glossy top, white pump.
+  const w = 56, h = 68, cx = 28, cy = 26, r = 21, tipY = 65, c = document.createElement("canvas");
+  c.width = w; c.height = h;
   const g = c.getContext("2d");
-  g.beginPath(); g.arc(28, 28, 24, 0, Math.PI * 2);
-  g.fillStyle = color; g.fill();
-  g.lineWidth = 4; g.strokeStyle = "#fff"; g.stroke();
-  g.save(); g.translate(28, 28); g.scale(1.45, 1.45); g.translate(-12, -12);
+  const a = Math.acos(r / (tipY - cy)); // tangent angle from the circle to the tip
+  const pin = new Path2D();
+  pin.arc(cx, cy, r, Math.PI / 2 + a, Math.PI / 2 - a + Math.PI * 2);
+  pin.lineTo(cx, tipY); pin.closePath();
+  g.save();
+  g.shadowColor = "rgba(0,0,0,0.38)"; g.shadowBlur = 5; g.shadowOffsetY = 2;
+  g.fillStyle = color; g.fill(pin);
+  g.restore();
+  g.save(); g.clip(pin); // subtle gloss for a crisper, less flat look
+  const gl = g.createLinearGradient(0, cy - r, 0, tipY);
+  gl.addColorStop(0, "rgba(255,255,255,0.22)"); gl.addColorStop(0.55, "rgba(255,255,255,0)"); gl.addColorStop(1, "rgba(0,0,0,0.14)");
+  g.fillStyle = gl; g.fillRect(0, 0, w, h);
+  g.restore();
+  g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = "#fff"; g.stroke(pin);
+  g.save(); g.translate(cx, cy); g.scale(1.3, 1.3); g.translate(-11.8, -12);
+  g.shadowColor = "rgba(0,0,0,0.25)"; g.shadowBlur = 1.5; g.shadowOffsetY = 0.5;
   g.fillStyle = "#fff";
   g.fill(new Path2D(PUMP_PATH), "evenodd");
   g.restore();
-  return g.getImageData(0, 0, s, s);
+  return g.getImageData(0, 0, w, h);
 }
 
 // Landmarks you can steer by: small round badges drawn on the phone (no extra download).
@@ -128,27 +141,49 @@ function landmarkIcon(color, draw) {
   const s = 40, c = document.createElement("canvas");
   c.width = c.height = s;
   const g = c.getContext("2d");
-  g.beginPath(); g.arc(20, 20, 17, 0, Math.PI * 2);
-  g.fillStyle = color; g.fill();
-  g.lineWidth = 3; g.strokeStyle = "#fff"; g.stroke();
-  g.fillStyle = "#fff"; g.strokeStyle = "#fff";
+  const disc = new Path2D(); disc.arc(20, 20, 15.5, 0, Math.PI * 2);
+  g.save();
+  g.shadowColor = "rgba(0,0,0,0.32)"; g.shadowBlur = 3; g.shadowOffsetY = 1;
+  g.fillStyle = color; g.fill(disc);
+  g.restore();
+  g.save();
+  g.fillStyle = "#fff"; g.strokeStyle = "#fff"; g.lineCap = "round"; g.lineJoin = "round";
   draw(g);
+  g.restore();
+  g.save(); g.clip(disc);
+  const gl = g.createLinearGradient(0, 4, 0, 36);
+  gl.addColorStop(0, "rgba(255,255,255,0.18)"); gl.addColorStop(0.5, "rgba(255,255,255,0)"); gl.addColorStop(1, "rgba(0,0,0,0.12)");
+  g.fillStyle = gl; g.fillRect(0, 0, s, s);
+  g.restore();
+  g.lineWidth = 2.5; g.strokeStyle = "#fff"; g.stroke(disc);
   return g.getImageData(0, 0, s, s);
 }
 const LANDMARK_ICONS = {
-  "lm-mosque": ["#0c8599", (g) => { // crescent: white disc with a badge-coloured disc over it
-    g.beginPath(); g.arc(18, 20, 10, 0, Math.PI * 2); g.fill();
-    g.fillStyle = "#0c8599"; g.beginPath(); g.arc(22.5, 17.5, 8.5, 0, Math.PI * 2); g.fill();
+  "lm-mosque": ["#0c8599", (g) => { // crescent + small star
+    g.beginPath(); g.arc(18.5, 20, 9, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#0c8599"; g.beginPath(); g.arc(22, 18, 7.6, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#fff"; g.beginPath();
+    for (let i = 0; i < 10; i++) { const rr = i % 2 ? 1.2 : 2.8, t = -Math.PI / 2 + (i * Math.PI) / 5; g.lineTo(25.5 + rr * Math.cos(t), 21.5 + rr * Math.sin(t)); }
+    g.closePath(); g.fill();
   }],
-  "lm-church": ["#5f3dc4", (g) => { g.fillRect(18, 9, 4, 22); g.fillRect(12, 15, 16, 4); }],
-  "lm-worship": ["#0c8599", (g) => { g.beginPath(); g.arc(20, 20, 5, 0, Math.PI * 2); g.fill(); }],
-  "lm-hospital": ["#e03131", (g) => { g.fillRect(17, 10, 6, 20); g.fillRect(10, 17, 20, 6); }],
-  "lm-clinic": ["#f06595", (g) => { g.fillRect(18, 12, 4, 16); g.fillRect(12, 18, 16, 4); }],
-  "lm-police": ["#1864ab", (g) => { // shield
-    g.beginPath(); g.moveTo(20, 9); g.lineTo(29, 13); g.quadraticCurveTo(29, 25, 20, 31); g.quadraticCurveTo(11, 25, 11, 13); g.closePath(); g.fill();
+  "lm-church": ["#5f3dc4", (g) => { g.fillRect(18.2, 10, 3.6, 20); g.fillRect(13, 14.6, 14, 3.6); }],
+  "lm-worship": ["#0c8599", (g) => { g.beginPath(); g.arc(20, 20, 4.5, 0, Math.PI * 2); g.fill(); }],
+  "lm-hospital": ["#e03131", (g) => { g.fillRect(17.25, 11, 5.5, 18); g.fillRect(11, 17.25, 18, 5.5); }],
+  "lm-clinic": ["#f06595", (g) => { g.fillRect(18.1, 13, 3.8, 14); g.fillRect(13, 18.1, 14, 3.8); }],
+  "lm-police": ["#1864ab", (g) => { // shield with a star cut-out
+    g.beginPath(); g.moveTo(20, 10); g.lineTo(28, 13.2); g.quadraticCurveTo(28, 25, 20, 30); g.quadraticCurveTo(12, 25, 12, 13.2); g.closePath(); g.fill();
+    g.fillStyle = "#1864ab"; g.beginPath();
+    for (let i = 0; i < 10; i++) { const rr = i % 2 ? 1.6 : 3.8, t = -Math.PI / 2 + (i * Math.PI) / 5; g.lineTo(20 + rr * Math.cos(t), 19.5 + rr * Math.sin(t)); }
+    g.closePath(); g.fill();
   }],
-  "lm-school": ["#4c6ef5", (g) => { g.fillRect(11, 13, 8, 14); g.fillRect(21, 13, 8, 14); }], // open book
-  "lm-market": ["#c2255c", (g) => { g.fillRect(12, 17, 16, 11); g.beginPath(); g.moveTo(10, 17); g.lineTo(20, 10); g.lineTo(30, 17); g.closePath(); g.fill(); }],
+  "lm-school": ["#4c6ef5", (g) => { // open book
+    g.beginPath(); g.moveTo(19.2, 14.5); g.quadraticCurveTo(15.5, 12.5, 11, 13); g.lineTo(11, 26.5); g.quadraticCurveTo(15.5, 26, 19.2, 28); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(20.8, 14.5); g.quadraticCurveTo(24.5, 12.5, 29, 13); g.lineTo(29, 26.5); g.quadraticCurveTo(24.5, 26, 20.8, 28); g.closePath(); g.fill();
+  }],
+  "lm-market": ["#c2255c", (g) => { // shopping bag
+    g.beginPath(); g.moveTo(12.5, 16); g.lineTo(27.5, 16); g.lineTo(28.5, 29); g.lineTo(11.5, 29); g.closePath(); g.fill();
+    g.lineWidth = 2; g.beginPath(); g.arc(20, 16, 4, Math.PI, 0); g.stroke();
+  }],
 };
 function addLandmarks(map, dark) {
   for (const [id, [color, draw]] of Object.entries(LANDMARK_ICONS)) if (!map.hasImage(id)) map.addImage(id, landmarkIcon(color, draw), { pixelRatio: 2 });
@@ -263,20 +298,20 @@ function addAppLayers() {
   map.addSource("route-alts", { type: "geojson", data: altsGeoJSON() });
   map.addLayer({ id: "route-alt-casing", type: "line", source: "route-alts",
     layout: { "line-join": "round", "line-cap": "round" },
-    paint: { "line-color": "#5f6f68", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 6, 16, 13] } }, firstSymbol);
+    paint: { "line-color": "#6b7682", "line-opacity": 0.9, "line-width": ["interpolate", ["exponential", 1.5], ["zoom"], 10, 6, 13, 8.5, 16, 14, 18, 20] } }, firstSymbol);
   map.addLayer({ id: "route-alt-line", type: "line", source: "route-alts",
     layout: { "line-join": "round", "line-cap": "round" },
-    paint: { "line-color": "#b4c3bc", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 16, 8] } }, firstSymbol);
+    paint: { "line-color": "#b9c2cb", "line-width": ["interpolate", ["exponential", 1.5], ["zoom"], 10, 3.5, 13, 5, 16, 9, 18, 14] } }, firstSymbol);
   map.addSource("route", { type: "geojson", data: routeGeoJSON(S.nav ? S.navRoute : S.preview) });
   map.addLayer({ id: "route-casing", type: "line", source: "route", filter: ["==", ["get", "kind"], "road"],
     layout: { "line-join": "round", "line-cap": "round" },
-    paint: { "line-color": "#0b4a8f", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 6, 16, 14] } }, firstSymbol);
+    paint: { "line-color": "#0b57d0", "line-width": ["interpolate", ["exponential", 1.5], ["zoom"], 10, 7, 13, 9.5, 16, 16, 18, 23] } }, firstSymbol);
   map.addLayer({ id: "route-line", type: "line", source: "route", filter: ["==", ["get", "kind"], "road"],
     layout: { "line-join": "round", "line-cap": "round" },
-    paint: { "line-color": "#339af0", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 16, 9] } }, firstSymbol);
+    paint: { "line-color": "#2f80ff", "line-width": ["interpolate", ["exponential", 1.5], ["zoom"], 10, 4.5, 13, 6.5, 16, 11, 18, 16] } }, firstSymbol);
   map.addLayer({ id: "route-tail", type: "line", source: "route", filter: ["==", ["get", "kind"], "tail"],
-    layout: { "line-cap": "round" },
-    paint: { "line-color": "#339af0", "line-width": 4, "line-dasharray": [0.5, 2] } }, firstSymbol);
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#2f80ff", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3, 16, 5.5], "line-dasharray": [0.1, 1.8] } }, firstSymbol);
 
   addLandmarks(map, matchMedia("(prefers-color-scheme: dark)").matches);
   map.addSource("stations", { type: "geojson", data: stationsGeoJSON() });
@@ -287,11 +322,14 @@ function addAppLayers() {
       "icon-allow-overlap": true,
       "text-field": ["step", ["zoom"], "", 13.5, ["get", "label"]],
       "text-font": ["Noto Sans Medium"], "text-size": 12.5,
-      "text-offset": [0, 1.35], "text-anchor": "top", "text-optional": true, "text-max-width": 9,
+      "icon-anchor": "bottom",
+      "text-offset": [0, 0.25], "text-anchor": "top", "text-optional": true, "text-max-width": 9,
     },
-    paint: { "text-color": "#7a3d00", "text-halo-color": "#fff", "text-halo-width": 1.6 } });
+    paint: matchMedia("(prefers-color-scheme: dark)").matches
+      ? { "text-color": "#ffd8a8", "text-halo-color": "#15171a", "text-halo-width": 1.8, "text-halo-blur": 0.4 }
+      : { "text-color": "#5c2b00", "text-halo-color": "#ffffff", "text-halo-width": 1.8, "text-halo-blur": 0.4 } });
   map.addLayer({ id: "stations-sel", type: "symbol", source: "stations", filter: ["==", ["get", "id"], S.selected?.id || ""],
-    layout: { "icon-image": "fuel-sel", "icon-size": 1.35, "icon-allow-overlap": true, "icon-ignore-placement": true } });
+    layout: { "icon-image": "fuel-sel", "icon-size": 1.45, "icon-anchor": "bottom", "icon-allow-overlap": true, "icon-ignore-placement": true } });
 }
 
 function stationsGeoJSON() {
